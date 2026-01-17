@@ -1,0 +1,315 @@
+"use client";
+
+import React, { useState } from "react";
+import { CanvasElement, TextElement, ImageElement, CanvasSettings } from "@/types/canvas";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { cn } from "@/lib/utils";
+import { 
+  Type, 
+  Image, 
+  Layers, 
+  Settings, 
+  ChevronUp, 
+  ChevronDown, 
+  ChevronsUp, 
+  ChevronsDown 
+} from "lucide-react";
+
+interface MobilePanelProps {
+  element: CanvasElement | null;
+  elements: CanvasElement[];
+  selectedId: string | null;
+  canvasSettings: CanvasSettings;
+  onUpdate: (id: string, updates: Partial<CanvasElement>) => void;
+  onUpdateCanvasSettings: (updates: Partial<CanvasSettings>) => void;
+  onEditText: (element: TextElement) => void;
+  onSelect: (id: string) => void;
+  onBringToFront: (id: string) => void;
+  onSendToBack: (id: string) => void;
+  onMoveUp: (id: string) => void;
+  onMoveDown: (id: string) => void;
+}
+
+type TabType = "properties" | "layers";
+
+export function MobilePanel({
+  element,
+  elements,
+  selectedId,
+  canvasSettings,
+  onUpdate,
+  onUpdateCanvasSettings,
+  onEditText,
+  onSelect,
+  onBringToFront,
+  onSendToBack,
+  onMoveUp,
+  onMoveDown,
+}: MobilePanelProps) {
+  const [activeTab, setActiveTab] = useState<TabType>("properties");
+  const sortedElements = [...elements].sort((a, b) => b.zIndex - a.zIndex);
+
+  const handlePositionChange = (axis: "x" | "y", value: string) => {
+    if (!element) return;
+    const numValue = parseInt(value) || 0;
+    onUpdate(element.id, {
+      position: {
+        ...element.position,
+        [axis]: numValue,
+      },
+    });
+  };
+
+  const handleSizeChange = (dimension: "width" | "height", value: string) => {
+    if (!element || element.type !== "image") return;
+    const numValue = Math.max(50, parseInt(value) || 50);
+    onUpdate(element.id, {
+      size: {
+        ...element.size,
+        [dimension]: numValue,
+      },
+    } as Partial<ImageElement>);
+  };
+
+  const handleFontSizeChange = (value: string) => {
+    if (!element || element.type !== "text") return;
+    onUpdate(element.id, { fontSize: parseInt(value) || 24 } as Partial<TextElement>);
+  };
+
+  const handleColorChange = (value: string) => {
+    if (!element || element.type !== "text") return;
+    onUpdate(element.id, { color: value } as Partial<TextElement>);
+  };
+
+  return (
+    <div className="bg-background border-t flex flex-col max-h-[40vh]">
+      {/* Tab buttons */}
+      <div className="flex border-b">
+        <button
+          className={cn(
+            "flex-1 py-2 px-4 text-sm font-medium flex items-center justify-center gap-2 transition-colors",
+            activeTab === "properties" 
+              ? "bg-primary/10 text-primary border-b-2 border-primary" 
+              : "text-muted-foreground hover:bg-muted"
+          )}
+          onClick={() => setActiveTab("properties")}
+        >
+          <Settings className="w-4 h-4" />
+          Properties
+        </button>
+        <button
+          className={cn(
+            "flex-1 py-2 px-4 text-sm font-medium flex items-center justify-center gap-2 transition-colors",
+            activeTab === "layers" 
+              ? "bg-primary/10 text-primary border-b-2 border-primary" 
+              : "text-muted-foreground hover:bg-muted"
+          )}
+          onClick={() => setActiveTab("layers")}
+        >
+          <Layers className="w-4 h-4" />
+          Layers
+        </button>
+      </div>
+
+      {/* Tab content */}
+      <div className="flex-1 overflow-y-auto p-3">
+        {activeTab === "properties" ? (
+          <div className="space-y-3">
+            {/* Canvas background color */}
+            <div className="flex items-center gap-3">
+              <Label className="text-xs text-muted-foreground whitespace-nowrap">
+                Background
+              </Label>
+              <Input
+                type="color"
+                value={canvasSettings.backgroundColor}
+                onChange={(e) => onUpdateCanvasSettings({ backgroundColor: e.target.value })}
+                className="h-8 w-12 p-1 cursor-pointer"
+              />
+              <Input
+                type="text"
+                value={canvasSettings.backgroundColor}
+                onChange={(e) => onUpdateCanvasSettings({ backgroundColor: e.target.value })}
+                className="h-8 flex-1 font-mono text-xs"
+              />
+            </div>
+
+            {element ? (
+              <>
+                {/* Position */}
+                <div className="flex items-center gap-2">
+                  <Label className="text-xs text-muted-foreground w-12">Pos</Label>
+                  <div className="flex gap-2 flex-1">
+                    <div className="flex items-center gap-1 flex-1">
+                      <span className="text-xs text-muted-foreground">X</span>
+                      <Input
+                        type="number"
+                        value={Math.round(element.position.x)}
+                        onChange={(e) => handlePositionChange("x", e.target.value)}
+                        className="h-8"
+                      />
+                    </div>
+                    <div className="flex items-center gap-1 flex-1">
+                      <span className="text-xs text-muted-foreground">Y</span>
+                      <Input
+                        type="number"
+                        value={Math.round(element.position.y)}
+                        onChange={(e) => handlePositionChange("y", e.target.value)}
+                        className="h-8"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Size for images */}
+                {element.type === "image" && (
+                  <div className="flex items-center gap-2">
+                    <Label className="text-xs text-muted-foreground w-12">Size</Label>
+                    <div className="flex gap-2 flex-1">
+                      <div className="flex items-center gap-1 flex-1">
+                        <span className="text-xs text-muted-foreground">W</span>
+                        <Input
+                          type="number"
+                          value={Math.round(element.size.width)}
+                          onChange={(e) => handleSizeChange("width", e.target.value)}
+                          className="h-8"
+                        />
+                      </div>
+                      <div className="flex items-center gap-1 flex-1">
+                        <span className="text-xs text-muted-foreground">H</span>
+                        <Input
+                          type="number"
+                          value={Math.round(element.size.height)}
+                          onChange={(e) => handleSizeChange("height", e.target.value)}
+                          className="h-8"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Text properties */}
+                {element.type === "text" && (
+                  <>
+                    <div className="flex items-center gap-2">
+                      <Label className="text-xs text-muted-foreground w-12">Font</Label>
+                      <Input
+                        type="number"
+                        min={8}
+                        max={200}
+                        value={element.fontSize}
+                        onChange={(e) => handleFontSizeChange(e.target.value)}
+                        className="h-8 w-20"
+                      />
+                      <Input
+                        type="color"
+                        value={element.color}
+                        onChange={(e) => handleColorChange(e.target.value)}
+                        className="h-8 w-12 p-1 cursor-pointer"
+                      />
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        className="flex-1"
+                        onClick={() => onEditText(element)}
+                      >
+                        Edit Text
+                      </Button>
+                    </div>
+                  </>
+                )}
+              </>
+            ) : (
+              <p className="text-xs text-muted-foreground text-center py-2">
+                Tap an element to edit
+              </p>
+            )}
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {/* Layer controls */}
+            {selectedId && (
+              <div className="flex items-center justify-center gap-1 pb-2 border-b">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-8"
+                  onClick={() => onBringToFront(selectedId)}
+                >
+                  <ChevronsUp className="h-4 w-4" />
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-8"
+                  onClick={() => onMoveUp(selectedId)}
+                >
+                  <ChevronUp className="h-4 w-4" />
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-8"
+                  onClick={() => onMoveDown(selectedId)}
+                >
+                  <ChevronDown className="h-4 w-4" />
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-8"
+                  onClick={() => onSendToBack(selectedId)}
+                >
+                  <ChevronsDown className="h-4 w-4" />
+                </Button>
+              </div>
+            )}
+
+            {/* Layer list */}
+            {elements.length === 0 ? (
+              <p className="text-xs text-muted-foreground text-center py-2">
+                No elements yet
+              </p>
+            ) : (
+              <div className="space-y-1">
+                {sortedElements.map((el) => (
+                  <div
+                    key={el.id}
+                    className={cn(
+                      "flex items-center gap-2 px-2 py-1.5 rounded-md cursor-pointer transition-colors",
+                      "hover:bg-muted",
+                      selectedId === el.id && "bg-primary/10 ring-1 ring-primary"
+                    )}
+                    onClick={() => onSelect(el.id)}
+                  >
+                    <div className="w-6 h-6 bg-muted rounded flex items-center justify-center flex-shrink-0 overflow-hidden">
+                      {el.type === "text" ? (
+                        <Type className="w-3 h-3 text-muted-foreground" />
+                      ) : (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={el.src}
+                          alt={el.name}
+                          className="w-full h-full object-cover"
+                        />
+                      )}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-xs font-medium truncate">
+                        {el.type === "text"
+                          ? el.content.substring(0, 15) + (el.content.length > 15 ? "..." : "")
+                          : el.name}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
