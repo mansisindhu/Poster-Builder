@@ -5,6 +5,7 @@ import { CanvasElement, TextElement, ImageElement, CanvasSettings } from "@/type
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { RotateCw, AlignLeft, AlignCenter, AlignRight, Bold, Italic } from "lucide-react";
 
 interface PropertiesPanelProps {
   element: CanvasElement | null;
@@ -97,6 +98,42 @@ export function PropertiesPanel({
     onUpdate(element.id, { color: value } as Partial<TextElement>);
   };
 
+  const handleRotationChange = (value: string) => {
+    let numValue = parseFloat(value) || 0;
+    // Normalize to 0-360
+    numValue = ((numValue % 360) + 360) % 360;
+    onUpdate(element.id, { rotation: numValue });
+  };
+
+  const handleResetRotation = () => {
+    onUpdate(element.id, { rotation: 0 });
+  };
+
+  const toggleBold = () => {
+    if (element.type !== "text") return;
+    onUpdate(element.id, { 
+      fontWeight: element.fontWeight === "bold" ? "normal" : "bold" 
+    } as Partial<TextElement>);
+  };
+
+  const toggleItalic = () => {
+    if (element.type !== "text") return;
+    onUpdate(element.id, { 
+      fontStyle: element.fontStyle === "italic" ? "normal" : "italic" 
+    } as Partial<TextElement>);
+  };
+
+  const setAlignment = (align: "left" | "center" | "right") => {
+    if (element.type !== "text") return;
+    onUpdate(element.id, { textAlign: align } as Partial<TextElement>);
+  };
+
+  const handleWidthChange = (value: string) => {
+    if (element.type !== "text") return;
+    const numValue = Math.max(50, parseInt(value) || 200);
+    onUpdate(element.id, { width: numValue } as Partial<TextElement>);
+  };
+
   return (
     <aside className="w-60 bg-background border-r flex flex-col">
       <div className="px-4 py-3 border-b">
@@ -136,6 +173,39 @@ export function PropertiesPanel({
               />
             </div>
           </div>
+        </div>
+
+        {/* Rotation */}
+        <div className="space-y-2">
+          <Label className="text-xs text-muted-foreground uppercase">
+            Rotation
+          </Label>
+          <div className="flex gap-2">
+            <div className="flex-1">
+              <Input
+                id="propRotation"
+                type="number"
+                min={0}
+                max={360}
+                step={1}
+                value={Math.round(element.rotation)}
+                onChange={(e) => handleRotationChange(e.target.value)}
+                className="h-8"
+              />
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 px-2"
+              onClick={handleResetRotation}
+              title="Reset rotation"
+            >
+              <RotateCw className="w-4 h-4" />
+            </Button>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Hold Shift for 15° snapping
+          </p>
         </div>
 
         {/* Size (for images) */}
@@ -195,6 +265,61 @@ export function PropertiesPanel({
               </Button>
             </div>
 
+            {/* Text Styling */}
+            <div className="space-y-2">
+              <Label className="text-xs text-muted-foreground uppercase">
+                Style
+              </Label>
+              <div className="flex gap-1 flex-wrap">
+                <Button
+                  variant={element.fontWeight === "bold" ? "default" : "outline"}
+                  size="sm"
+                  className="h-8 w-8 p-0"
+                  onClick={toggleBold}
+                  title="Bold"
+                >
+                  <Bold className="w-4 h-4" />
+                </Button>
+                <Button
+                  variant={element.fontStyle === "italic" ? "default" : "outline"}
+                  size="sm"
+                  className="h-8 w-8 p-0"
+                  onClick={toggleItalic}
+                  title="Italic"
+                >
+                  <Italic className="w-4 h-4" />
+                </Button>
+                <div className="w-px bg-border mx-1" />
+                <Button
+                  variant={element.textAlign === "left" ? "default" : "outline"}
+                  size="sm"
+                  className="h-8 w-8 p-0"
+                  onClick={() => setAlignment("left")}
+                  title="Align Left"
+                >
+                  <AlignLeft className="w-4 h-4" />
+                </Button>
+                <Button
+                  variant={element.textAlign === "center" ? "default" : "outline"}
+                  size="sm"
+                  className="h-8 w-8 p-0"
+                  onClick={() => setAlignment("center")}
+                  title="Align Center"
+                >
+                  <AlignCenter className="w-4 h-4" />
+                </Button>
+                <Button
+                  variant={element.textAlign === "right" ? "default" : "outline"}
+                  size="sm"
+                  className="h-8 w-8 p-0"
+                  onClick={() => setAlignment("right")}
+                  title="Align Right"
+                >
+                  <AlignRight className="w-4 h-4" />
+                </Button>
+              </div>
+            </div>
+
             <div className="space-y-2">
               <Label
                 htmlFor="propFontSize"
@@ -209,6 +334,23 @@ export function PropertiesPanel({
                 max={200}
                 value={element.fontSize}
                 onChange={(e) => handleFontSizeChange(e.target.value)}
+                className="h-8"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label
+                htmlFor="propTextWidth"
+                className="text-xs text-muted-foreground uppercase"
+              >
+                Text Width
+              </Label>
+              <Input
+                id="propTextWidth"
+                type="number"
+                min={50}
+                value={element.width}
+                onChange={(e) => handleWidthChange(e.target.value)}
                 className="h-8"
               />
             </div>

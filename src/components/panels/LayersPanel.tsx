@@ -3,7 +3,7 @@
 import React from "react";
 import { CanvasElement } from "@/types/canvas";
 import { cn } from "@/lib/utils";
-import { Type, Image, ChevronUp, ChevronDown, ChevronsUp, ChevronsDown } from "lucide-react";
+import { Type, Image, ChevronUp, ChevronDown, ChevronsUp, ChevronsDown, RotateCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 interface LayersPanelProps {
@@ -114,8 +114,14 @@ export function LayersPanel({
                         (element.content.length > 20 ? "..." : "")
                       : element.name}
                   </div>
-                  <div className="text-xs text-muted-foreground capitalize">
+                  <div className="text-xs text-muted-foreground capitalize flex items-center gap-1">
                     {element.type}
+                    {element.rotation !== 0 && (
+                      <span className="flex items-center gap-0.5 text-muted-foreground">
+                        <RotateCw className="w-3 h-3" />
+                        {Math.round(element.rotation)}°
+                      </span>
+                    )}
                   </div>
                 </div>
               </div>

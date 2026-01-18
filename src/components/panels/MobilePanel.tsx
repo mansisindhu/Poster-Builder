@@ -14,7 +14,13 @@ import {
   ChevronUp, 
   ChevronDown, 
   ChevronsUp, 
-  ChevronsDown 
+  ChevronsDown,
+  RotateCw,
+  AlignLeft,
+  AlignCenter,
+  AlignRight,
+  Bold,
+  Italic
 } from "lucide-react";
 
 interface MobilePanelProps {
@@ -81,6 +87,32 @@ export function MobilePanel({
   const handleColorChange = (value: string) => {
     if (!element || element.type !== "text") return;
     onUpdate(element.id, { color: value } as Partial<TextElement>);
+  };
+
+  const handleRotationChange = (value: string) => {
+    if (!element) return;
+    let numValue = parseFloat(value) || 0;
+    numValue = ((numValue % 360) + 360) % 360;
+    onUpdate(element.id, { rotation: numValue });
+  };
+
+  const toggleBold = () => {
+    if (!element || element.type !== "text") return;
+    onUpdate(element.id, { 
+      fontWeight: element.fontWeight === "bold" ? "normal" : "bold" 
+    } as Partial<TextElement>);
+  };
+
+  const toggleItalic = () => {
+    if (!element || element.type !== "text") return;
+    onUpdate(element.id, { 
+      fontStyle: element.fontStyle === "italic" ? "normal" : "italic" 
+    } as Partial<TextElement>);
+  };
+
+  const setAlignment = (align: "left" | "center" | "right") => {
+    if (!element || element.type !== "text") return;
+    onUpdate(element.id, { textAlign: align } as Partial<TextElement>);
   };
 
   return (
@@ -163,6 +195,30 @@ export function MobilePanel({
                   </div>
                 </div>
 
+                {/* Rotation */}
+                <div className="flex items-center gap-2">
+                  <Label className="text-xs text-muted-foreground w-12">Rotate</Label>
+                  <div className="flex gap-2 flex-1">
+                    <Input
+                      type="number"
+                      min={0}
+                      max={360}
+                      value={Math.round(element.rotation)}
+                      onChange={(e) => handleRotationChange(e.target.value)}
+                      className="h-8 flex-1"
+                    />
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-8 px-2"
+                      onClick={() => onUpdate(element.id, { rotation: 0 })}
+                      title="Reset rotation"
+                    >
+                      <RotateCw className="w-4 h-4" />
+                    </Button>
+                  </div>
+                </div>
+
                 {/* Size for images */}
                 {element.type === "image" && (
                   <div className="flex items-center gap-2">
@@ -193,6 +249,54 @@ export function MobilePanel({
                 {/* Text properties */}
                 {element.type === "text" && (
                   <>
+                    {/* Text styling buttons */}
+                    <div className="flex items-center gap-2">
+                      <Label className="text-xs text-muted-foreground w-12">Style</Label>
+                      <div className="flex gap-1 flex-1">
+                        <Button
+                          variant={element.fontWeight === "bold" ? "default" : "outline"}
+                          size="sm"
+                          className="h-8 w-8 p-0"
+                          onClick={toggleBold}
+                        >
+                          <Bold className="w-4 h-4" />
+                        </Button>
+                        <Button
+                          variant={element.fontStyle === "italic" ? "default" : "outline"}
+                          size="sm"
+                          className="h-8 w-8 p-0"
+                          onClick={toggleItalic}
+                        >
+                          <Italic className="w-4 h-4" />
+                        </Button>
+                        <div className="w-px bg-border mx-1" />
+                        <Button
+                          variant={element.textAlign === "left" ? "default" : "outline"}
+                          size="sm"
+                          className="h-8 w-8 p-0"
+                          onClick={() => setAlignment("left")}
+                        >
+                          <AlignLeft className="w-4 h-4" />
+                        </Button>
+                        <Button
+                          variant={element.textAlign === "center" ? "default" : "outline"}
+                          size="sm"
+                          className="h-8 w-8 p-0"
+                          onClick={() => setAlignment("center")}
+                        >
+                          <AlignCenter className="w-4 h-4" />
+                        </Button>
+                        <Button
+                          variant={element.textAlign === "right" ? "default" : "outline"}
+                          size="sm"
+                          className="h-8 w-8 p-0"
+                          onClick={() => setAlignment("right")}
+                        >
+                          <AlignRight className="w-4 h-4" />
+                        </Button>
+                      </div>
+                    </div>
+
                     <div className="flex items-center gap-2">
                       <Label className="text-xs text-muted-foreground w-12">Font</Label>
                       <Input
@@ -237,6 +341,7 @@ export function MobilePanel({
                   size="sm"
                   className="h-8"
                   onClick={() => onBringToFront(selectedId)}
+                  title="Bring to front"
                 >
                   <ChevronsUp className="h-4 w-4" />
                 </Button>
@@ -245,6 +350,7 @@ export function MobilePanel({
                   size="sm"
                   className="h-8"
                   onClick={() => onMoveUp(selectedId)}
+                  title="Move up"
                 >
                   <ChevronUp className="h-4 w-4" />
                 </Button>
@@ -253,6 +359,7 @@ export function MobilePanel({
                   size="sm"
                   className="h-8"
                   onClick={() => onMoveDown(selectedId)}
+                  title="Move down"
                 >
                   <ChevronDown className="h-4 w-4" />
                 </Button>
@@ -261,6 +368,7 @@ export function MobilePanel({
                   size="sm"
                   className="h-8"
                   onClick={() => onSendToBack(selectedId)}
+                  title="Send to back"
                 >
                   <ChevronsDown className="h-4 w-4" />
                 </Button>
@@ -303,6 +411,9 @@ export function MobilePanel({
                           : el.name}
                       </div>
                     </div>
+                    {el.rotation !== 0 && (
+                      <RotateCw className="w-3 h-3 text-muted-foreground flex-shrink-0" />
+                    )}
                   </div>
                 ))}
               </div>
