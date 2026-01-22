@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { CanvasElement, TextElement, ImageElement, CanvasSettings } from "@/types/canvas";
+import { CanvasElement, TextElement, ImageElement, ShapeElement, GroupElement, CanvasSettings, ShapeType } from "@/types/canvas";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -20,13 +20,20 @@ import {
   AlignCenter,
   AlignRight,
   Bold,
-  Italic
+  Italic,
+  Square,
+  Circle,
+  Triangle,
+  Minus,
+  Pentagon,
+  Group
 } from "lucide-react";
 
 interface MobilePanelProps {
   element: CanvasElement | null;
   elements: CanvasElement[];
   selectedId: string | null;
+  selectedCount: number;
   canvasSettings: CanvasSettings;
   onUpdate: (id: string, updates: Partial<CanvasElement>) => void;
   onUpdateCanvasSettings: (updates: Partial<CanvasSettings>) => void;
@@ -36,14 +43,62 @@ interface MobilePanelProps {
   onSendToBack: (id: string) => void;
   onMoveUp: (id: string) => void;
   onMoveDown: (id: string) => void;
+  onGroup: () => void;
+  onUngroup: () => void;
 }
 
 type TabType = "properties" | "layers";
+
+// Get shape icon based on shape type
+function getShapeIcon(shapeType: ShapeType) {
+  switch (shapeType) {
+    case "rectangle":
+      return <Square className="w-3 h-3 text-muted-foreground" />;
+    case "circle":
+      return <Circle className="w-3 h-3 text-muted-foreground" />;
+    case "ellipse":
+      return <Circle className="w-3 h-3 text-muted-foreground scale-x-125" />;
+    case "line":
+      return <Minus className="w-3 h-3 text-muted-foreground" />;
+    case "triangle":
+      return <Triangle className="w-3 h-3 text-muted-foreground" />;
+    case "polygon":
+      return <Pentagon className="w-3 h-3 text-muted-foreground" />;
+    default:
+      return <Square className="w-3 h-3 text-muted-foreground" />;
+  }
+}
+
+// Get display name for element
+function getElementDisplayName(element: CanvasElement): string {
+  switch (element.type) {
+    case "text":
+      const text = element.content.substring(0, 15);
+      return text + (element.content.length > 15 ? "..." : "");
+    case "image":
+      return element.name;
+    case "shape":
+      const shapeLabels: Record<ShapeType, string> = {
+        rectangle: "Rectangle",
+        circle: "Circle",
+        ellipse: "Ellipse",
+        line: "Line",
+        triangle: "Triangle",
+        polygon: "Polygon",
+      };
+      return shapeLabels[element.shapeType] || "Shape";
+    case "group":
+      return `Group (${element.childIds.length})`;
+    default:
+      return "Element";
+  }
+}
 
 export function MobilePanel({
   element,
   elements,
   selectedId,
+  selectedCount,
   canvasSettings,
   onUpdate,
   onUpdateCanvasSettings,
@@ -53,9 +108,23 @@ export function MobilePanel({
   onSendToBack,
   onMoveUp,
   onMoveDown,
+  onGroup,
+  onUngroup,
 }: MobilePanelProps) {
   const [activeTab, setActiveTab] = useState<TabType>("properties");
-  const sortedElements = [...elements].sort((a, b) => b.zIndex - a.zIndex);
+  
+  // Get IDs of elements that are children of groups (they shouldn't appear as separate layers)
+  const groupChildIds = new Set<string>();
+  elements.forEach(el => {
+    if (el.type === "group") {
+      el.childIds.forEach(id => groupChildIds.add(id));
+    }
+  });
+  
+  // Filter out group children and sort by zIndex (highest first for display)
+  const sortedElements = [...elements]
+    .filter(el => !groupChildIds.has(el.id))
+    .sort((a, b) => b.zIndex - a.zIndex);
 
   const handlePositionChange = (axis: "x" | "y", value: string) => {
     if (!element) return;
@@ -69,14 +138,14 @@ export function MobilePanel({
   };
 
   const handleSizeChange = (dimension: "width" | "height", value: string) => {
-    if (!element || element.type !== "image") return;
+    if (!element || (element.type !== "image" && element.type !== "shape" && element.type !== "group")) return;
     const numValue = Math.max(50, parseInt(value) || 50);
     onUpdate(element.id, {
       size: {
         ...element.size,
         [dimension]: numValue,
       },
-    } as Partial<ImageElement>);
+    } as Partial<ImageElement | ShapeElement | GroupElement>);
   };
 
   const handleFontSizeChange = (value: string) => {
@@ -115,6 +184,29 @@ export function MobilePanel({
     onUpdate(element.id, { textAlign: align } as Partial<TextElement>);
   };
 
+  // Shape handlers
+  const handleShapeFillColorChange = (value: string) => {
+    if (!element || element.type !== "shape") return;
+    onUpdate(element.id, { fillColor: value } as Partial<ShapeElement>);
+  };
+
+  const handleShapeStrokeColorChange = (value: string) => {
+    if (!element || element.type !== "shape") return;
+    onUpdate(element.id, { strokeColor: value } as Partial<ShapeElement>);
+  };
+
+  const handleShapeStrokeWidthChange = (value: string) => {
+    if (!element || element.type !== "shape") return;
+    const numValue = Math.max(0, parseInt(value) || 0);
+    onUpdate(element.id, { strokeWidth: numValue } as Partial<ShapeElement>);
+  };
+
+  const handleShapeBorderRadiusChange = (value: string) => {
+    if (!element || element.type !== "shape") return;
+    const numValue = Math.max(0, parseInt(value) || 0);
+    onUpdate(element.id, { borderRadius: numValue } as Partial<ShapeElement>);
+  };
+
   return (
     <div className="bg-background border-t flex flex-col max-h-[40vh]">
       {/* Tab buttons */}
@@ -149,6 +241,25 @@ export function MobilePanel({
       <div className="flex-1 overflow-y-auto p-3">
         {activeTab === "properties" ? (
           <div className="space-y-3">
+            {/* Multi-selection group option */}
+            {selectedCount > 1 && (
+              <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 text-xs text-muted-foreground flex-1">
+                  <Group className="w-3 h-3" />
+                  {selectedCount} items selected
+                </div>
+                <Button
+                  variant="default"
+                  size="sm"
+                  onClick={onGroup}
+                  className="h-8"
+                >
+                  <Group className="w-4 h-4 mr-1" />
+                  Group
+                </Button>
+              </div>
+            )}
+
             {/* Canvas background color */}
             <div className="flex items-center gap-3">
               <Label className="text-xs text-muted-foreground whitespace-nowrap">
@@ -219,8 +330,8 @@ export function MobilePanel({
                   </div>
                 </div>
 
-                {/* Size for images */}
-                {element.type === "image" && (
+                {/* Size for images, shapes, and groups */}
+                {(element.type === "image" || element.type === "shape" || element.type === "group") && (
                   <div className="flex items-center gap-2">
                     <Label className="text-xs text-muted-foreground w-12">Size</Label>
                     <div className="flex gap-2 flex-1">
@@ -244,6 +355,77 @@ export function MobilePanel({
                       </div>
                     </div>
                   </div>
+                )}
+
+                {/* Group info */}
+                {element.type === "group" && (
+                  <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground bg-muted px-2 py-1 rounded flex-1">
+                      <Group className="w-3 h-3" />
+                      Group ({element.childIds.length} items)
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={onUngroup}
+                      className="h-8"
+                    >
+                      Ungroup
+                    </Button>
+                  </div>
+                )}
+
+                {/* Shape properties */}
+                {element.type === "shape" && (
+                  <>
+                    <div className="flex items-center gap-2">
+                      <Label className="text-xs text-muted-foreground w-12">Fill</Label>
+                      <Input
+                        type="color"
+                        value={element.fillColor}
+                        onChange={(e) => handleShapeFillColorChange(e.target.value)}
+                        className="h-8 w-12 p-1 cursor-pointer"
+                      />
+                      <Input
+                        type="text"
+                        value={element.fillColor}
+                        onChange={(e) => handleShapeFillColorChange(e.target.value)}
+                        className="h-8 flex-1 font-mono text-xs"
+                      />
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <Label className="text-xs text-muted-foreground w-12">Stroke</Label>
+                      <Input
+                        type="color"
+                        value={element.strokeColor}
+                        onChange={(e) => handleShapeStrokeColorChange(e.target.value)}
+                        className="h-8 w-12 p-1 cursor-pointer"
+                      />
+                      <Input
+                        type="number"
+                        min={0}
+                        max={50}
+                        value={element.strokeWidth}
+                        onChange={(e) => handleShapeStrokeWidthChange(e.target.value)}
+                        className="h-8 w-16"
+                        placeholder="Width"
+                      />
+                    </div>
+
+                    {element.shapeType === "rectangle" && (
+                      <div className="flex items-center gap-2">
+                        <Label className="text-xs text-muted-foreground w-12">Radius</Label>
+                        <Input
+                          type="number"
+                          min={0}
+                          value={element.borderRadius}
+                          onChange={(e) => handleShapeBorderRadiusChange(e.target.value)}
+                          className="h-8 flex-1"
+                        />
+                      </div>
+                    )}
+                  </>
                 )}
 
                 {/* Text properties */}
@@ -395,6 +577,10 @@ export function MobilePanel({
                     <div className="w-6 h-6 bg-muted rounded flex items-center justify-center flex-shrink-0 overflow-hidden">
                       {el.type === "text" ? (
                         <Type className="w-3 h-3 text-muted-foreground" />
+                      ) : el.type === "shape" ? (
+                        getShapeIcon(el.shapeType)
+                      ) : el.type === "group" ? (
+                        <Group className="w-3 h-3 text-muted-foreground" />
                       ) : (
                         // eslint-disable-next-line @next/next/no-img-element
                         <img
@@ -406,9 +592,7 @@ export function MobilePanel({
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="text-xs font-medium truncate">
-                        {el.type === "text"
-                          ? el.content.substring(0, 15) + (el.content.length > 15 ? "..." : "")
-                          : el.name}
+                        {getElementDisplayName(el)}
                       </div>
                     </div>
                     {el.rotation !== 0 && (

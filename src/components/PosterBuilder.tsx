@@ -9,14 +9,17 @@ import { LayersPanel } from "./panels/LayersPanel";
 import { TextEditDialog } from "./dialogs/TextEditDialog";
 import { ProjectDialog } from "./dialogs/ProjectDialog";
 import { CanvasSizeDialog } from "./dialogs/CanvasSizeDialog";
+import { ExportDialog } from "./dialogs/ExportDialog";
 import { MobilePanel } from "./panels/MobilePanel";
-import { TextElement, TextFormData, CanvasElement, ImageElement, CanvasSize } from "@/types/canvas";
+import { TextElement, TextFormData, CanvasElement, ImageElement, ShapeElement, GroupElement, CanvasSize, ShapeType } from "@/types/canvas";
 
 export function PosterBuilder() {
   const {
     elements,
     selectedElement,
+    selectedElements,
     selectedId,
+    selectedIds,
     canvasSettings,
     canUndo,
     canRedo,
@@ -28,6 +31,7 @@ export function PosterBuilder() {
     setCanvasSize,
     addTextElement,
     addImageElement,
+    addShapeElement,
     updateElement,
     updateElementPosition,
     updateElementRotation,
@@ -36,7 +40,14 @@ export function PosterBuilder() {
     saveInteractionSnapshot,
     commitInteraction,
     deleteSelected,
+    copyElement,
+    pasteElement,
+    duplicateElement,
+    hasClipboard,
     selectElement,
+    toggleElementSelection,
+    groupElements,
+    ungroupElements,
     clearCanvas,
     newProject,
     moveElement,
@@ -56,6 +67,7 @@ export function PosterBuilder() {
   const [projectDialogOpen, setProjectDialogOpen] = useState(false);
   const [projectDialogMode, setProjectDialogMode] = useState<"save" | "load">("save");
   const [canvasSizeDialogOpen, setCanvasSizeDialogOpen] = useState(false);
+  const [exportDialogOpen, setExportDialogOpen] = useState(false);
   const [projects, setProjects] = useState(getProjects());
 
   // Refresh projects when dialog opens
@@ -103,6 +115,13 @@ export function PosterBuilder() {
     [addImageElement]
   );
 
+  const handleAddShape = useCallback(
+    (shapeType: ShapeType) => {
+      addShapeElement(shapeType);
+    },
+    [addShapeElement]
+  );
+
   const handleClearCanvas = useCallback(() => {
     if (elements.length === 0) return;
     if (window.confirm("Are you sure you want to clear the canvas?")) {
@@ -110,26 +129,48 @@ export function PosterBuilder() {
     }
   }, [elements.length, clearCanvas]);
 
-  const handleExport = useCallback(() => {
+  const handleExport = useCallback((scale: number = 2) => {
     selectElement(null);
 
     const { width, height } = canvasSettings.canvasSize;
     const exportCanvas = document.createElement("canvas");
-    exportCanvas.width = width;
-    exportCanvas.height = height;
+    
+    // Create high-resolution canvas
+    exportCanvas.width = width * scale;
+    exportCanvas.height = height * scale;
     const ctx = exportCanvas.getContext("2d")!;
+    
+    // Scale the context to draw at higher resolution
+    ctx.scale(scale, scale);
+    
+    // Enable high-quality image rendering
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = "high";
 
     ctx.fillStyle = canvasSettings.backgroundColor;
     ctx.fillRect(0, 0, width, height);
 
-    const sortedElements = [...elements].sort((a, b) => a.zIndex - b.zIndex);
-    const imageElements = sortedElements.filter((el) => el.type === "image");
+    // Get IDs of elements that are children of groups
+    const groupChildIds = new Set<string>();
+    elements.forEach(el => {
+      if (el.type === "group") {
+        el.childIds.forEach(id => groupChildIds.add(id));
+      }
+    });
+
+    // Filter out group children from top-level rendering and sort by zIndex
+    const sortedElements = [...elements]
+      .filter(el => !groupChildIds.has(el.id))
+      .sort((a, b) => a.zIndex - b.zIndex);
+    
+    // Collect all image elements (including those inside groups) for preloading
+    const allImageElements = elements.filter((el) => el.type === "image");
     
     const loadImages = async () => {
       const imageMap = new Map<string, HTMLImageElement>();
       
       await Promise.all(
-        imageElements.map((element) => {
+        allImageElements.map((element) => {
           return new Promise<void>((resolve) => {
             if (element.type !== "image") {
               resolve();
@@ -167,6 +208,148 @@ export function PosterBuilder() {
           lines.push(currentLine);
         }
         return lines;
+      };
+
+      // Helper function to draw shapes
+      const drawShape = (element: ShapeElement) => {
+        const { size, shapeType, fillColor, strokeColor, strokeWidth, borderRadius, points, position } = element;
+        const { width: shapeWidth, height: shapeHeight } = size;
+
+        ctx.fillStyle = fillColor;
+        ctx.strokeStyle = strokeColor;
+        ctx.lineWidth = strokeWidth;
+        ctx.lineJoin = "round";
+        ctx.lineCap = "round";
+
+        // Helper function to scale points to fit current size
+        const getScaledPoints = (pts: typeof points) => {
+          if (!pts || pts.length === 0) return [];
+          
+          // Find the bounding box of the original points
+          const minX = Math.min(...pts.map(p => p.x));
+          const maxX = Math.max(...pts.map(p => p.x));
+          const minY = Math.min(...pts.map(p => p.y));
+          const maxY = Math.max(...pts.map(p => p.y));
+          
+          const originalWidth = maxX - minX || 1;
+          const originalHeight = maxY - minY || 1;
+          
+          // Scale points to fit current size
+          return pts.map(p => ({
+            x: ((p.x - minX) / originalWidth) * shapeWidth,
+            y: ((p.y - minY) / originalHeight) * shapeHeight
+          }));
+        };
+
+        switch (shapeType) {
+          case "rectangle":
+            if (borderRadius > 0) {
+              // Draw rounded rectangle
+              const r = Math.min(borderRadius, shapeWidth / 2, shapeHeight / 2);
+              ctx.beginPath();
+              ctx.moveTo(position.x + r, position.y);
+              ctx.lineTo(position.x + shapeWidth - r, position.y);
+              ctx.quadraticCurveTo(position.x + shapeWidth, position.y, position.x + shapeWidth, position.y + r);
+              ctx.lineTo(position.x + shapeWidth, position.y + shapeHeight - r);
+              ctx.quadraticCurveTo(position.x + shapeWidth, position.y + shapeHeight, position.x + shapeWidth - r, position.y + shapeHeight);
+              ctx.lineTo(position.x + r, position.y + shapeHeight);
+              ctx.quadraticCurveTo(position.x, position.y + shapeHeight, position.x, position.y + shapeHeight - r);
+              ctx.lineTo(position.x, position.y + r);
+              ctx.quadraticCurveTo(position.x, position.y, position.x + r, position.y);
+              ctx.closePath();
+              ctx.fill();
+              if (strokeWidth > 0) ctx.stroke();
+            } else {
+              ctx.fillRect(position.x, position.y, shapeWidth, shapeHeight);
+              if (strokeWidth > 0) ctx.strokeRect(position.x, position.y, shapeWidth, shapeHeight);
+            }
+            break;
+
+          case "circle":
+            const radius = Math.min(shapeWidth, shapeHeight) / 2;
+            ctx.beginPath();
+            ctx.arc(position.x + shapeWidth / 2, position.y + shapeHeight / 2, radius, 0, Math.PI * 2);
+            ctx.fill();
+            if (strokeWidth > 0) ctx.stroke();
+            break;
+
+          case "ellipse":
+            ctx.beginPath();
+            ctx.ellipse(
+              position.x + shapeWidth / 2,
+              position.y + shapeHeight / 2,
+              shapeWidth / 2,
+              shapeHeight / 2,
+              0,
+              0,
+              Math.PI * 2
+            );
+            ctx.fill();
+            if (strokeWidth > 0) ctx.stroke();
+            break;
+
+          case "line":
+            ctx.beginPath();
+            if (points && points.length >= 2) {
+              const scaledPts = getScaledPoints(points);
+              ctx.moveTo(position.x + scaledPts[0].x, position.y + scaledPts[0].y);
+              ctx.lineTo(position.x + scaledPts[1].x, position.y + scaledPts[1].y);
+            } else {
+              ctx.moveTo(position.x, position.y + shapeHeight / 2);
+              ctx.lineTo(position.x + shapeWidth, position.y + shapeHeight / 2);
+            }
+            ctx.lineWidth = Math.max(strokeWidth, 2);
+            ctx.stroke();
+            break;
+
+          case "triangle":
+            ctx.beginPath();
+            if (points && points.length >= 3) {
+              const scaledPts = getScaledPoints(points);
+              ctx.moveTo(position.x + scaledPts[0].x, position.y + scaledPts[0].y);
+              ctx.lineTo(position.x + scaledPts[1].x, position.y + scaledPts[1].y);
+              ctx.lineTo(position.x + scaledPts[2].x, position.y + scaledPts[2].y);
+            } else {
+              ctx.moveTo(position.x + shapeWidth / 2, position.y);
+              ctx.lineTo(position.x, position.y + shapeHeight);
+              ctx.lineTo(position.x + shapeWidth, position.y + shapeHeight);
+            }
+            ctx.closePath();
+            ctx.fill();
+            if (strokeWidth > 0) ctx.stroke();
+            break;
+
+          case "polygon":
+            if (points && points.length >= 3) {
+              const scaledPts = getScaledPoints(points);
+              ctx.beginPath();
+              ctx.moveTo(position.x + scaledPts[0].x, position.y + scaledPts[0].y);
+              for (let i = 1; i < scaledPts.length; i++) {
+                ctx.lineTo(position.x + scaledPts[i].x, position.y + scaledPts[i].y);
+              }
+              ctx.closePath();
+              ctx.fill();
+              if (strokeWidth > 0) ctx.stroke();
+            } else {
+              // Default pentagon
+              const sides = 5;
+              const cx = shapeWidth / 2;
+              const cy = shapeHeight / 2;
+              const r = Math.min(shapeWidth, shapeHeight) / 2;
+              ctx.beginPath();
+              for (let i = 0; i < sides; i++) {
+                const angle = (i * 2 * Math.PI) / sides - Math.PI / 2;
+                const px = position.x + cx + r * Math.cos(angle);
+                const py = position.y + cy + r * Math.sin(angle);
+                if (i === 0) ctx.moveTo(px, py);
+                else ctx.lineTo(px, py);
+              }
+              ctx.closePath();
+              ctx.fill();
+              if (strokeWidth > 0) ctx.stroke();
+            }
+            break;
+        }
       };
 
       sortedElements.forEach((element) => {
@@ -238,14 +421,122 @@ export function PosterBuilder() {
               element.size.height
             );
           }
+        } else if (element.type === "shape") {
+          const centerX = element.position.x + element.size.width / 2;
+          const centerY = element.position.y + element.size.height / 2;
+
+          ctx.translate(centerX, centerY);
+          ctx.rotate((element.rotation * Math.PI) / 180);
+          ctx.translate(-centerX, -centerY);
+
+          drawShape(element);
+        } else if (element.type === "group") {
+          // Draw group: apply group transform and then draw each child
+          const groupCenterX = element.position.x + element.size.width / 2;
+          const groupCenterY = element.position.y + element.size.height / 2;
+
+          ctx.translate(groupCenterX, groupCenterY);
+          ctx.rotate((element.rotation * Math.PI) / 180);
+          ctx.translate(-groupCenterX, -groupCenterY);
+
+          // Draw each child element within the group
+          element.childIds.forEach(childId => {
+            const childElement = elements.find(el => el.id === childId);
+            if (!childElement) return;
+
+            ctx.save();
+            
+            // Child position is relative to group position
+            const childAbsX = element.position.x + childElement.position.x;
+            const childAbsY = element.position.y + childElement.position.y;
+
+            if (childElement.type === "text") {
+              const fontStyle = childElement.fontStyle || "normal";
+              ctx.font = `${fontStyle} ${childElement.fontWeight} ${childElement.fontSize}px ${childElement.fontFamily}`;
+              
+              const textWidth = childElement.width - 24;
+              const paragraphs = childElement.content.split("\n");
+              const allLines: string[] = [];
+              paragraphs.forEach((para) => {
+                if (para === '') {
+                  allLines.push('');
+                } else {
+                  const wrapped = wrapText(para, textWidth);
+                  allLines.push(...wrapped);
+                }
+              });
+              
+              const lineHeight = childElement.fontSize * 1.2;
+              const textHeight = allLines.length * lineHeight;
+              const centerX = childAbsX + childElement.width / 2;
+              const centerY = childAbsY + 8 + textHeight / 2;
+
+              ctx.translate(centerX, centerY);
+              ctx.rotate((childElement.rotation * Math.PI) / 180);
+              ctx.translate(-centerX, -centerY);
+
+              ctx.fillStyle = childElement.color;
+              ctx.textBaseline = "top";
+              
+              const textAlign = childElement.textAlign || "left";
+              let y = childAbsY + 8;
+              allLines.forEach((line) => {
+                let x = childAbsX + 12;
+                if (textAlign === "center") {
+                  const lineWidth = ctx.measureText(line).width;
+                  x = childAbsX + (childElement.width - lineWidth) / 2;
+                } else if (textAlign === "right") {
+                  const lineWidth = ctx.measureText(line).width;
+                  x = childAbsX + childElement.width - lineWidth - 12;
+                }
+                ctx.fillText(line, x, y);
+                y += lineHeight;
+              });
+            } else if (childElement.type === "image") {
+              const img = imageMap.get(childElement.id);
+              if (img) {
+                const centerX = childAbsX + childElement.size.width / 2;
+                const centerY = childAbsY + childElement.size.height / 2;
+
+                ctx.translate(centerX, centerY);
+                ctx.rotate((childElement.rotation * Math.PI) / 180);
+                ctx.translate(-centerX, -centerY);
+
+                ctx.drawImage(
+                  img,
+                  childAbsX,
+                  childAbsY,
+                  childElement.size.width,
+                  childElement.size.height
+                );
+              }
+            } else if (childElement.type === "shape") {
+              const centerX = childAbsX + childElement.size.width / 2;
+              const centerY = childAbsY + childElement.size.height / 2;
+
+              ctx.translate(centerX, centerY);
+              ctx.rotate((childElement.rotation * Math.PI) / 180);
+              ctx.translate(-centerX, -centerY);
+
+              // Draw shape at absolute position
+              const shapeWithAbsPos = {
+                ...childElement,
+                position: { x: childAbsX, y: childAbsY }
+              };
+              drawShape(shapeWithAbsPos);
+            }
+            
+            ctx.restore();
+          });
         }
 
         ctx.restore();
       });
 
       const link = document.createElement("a");
-      link.download = `${currentProjectName.replace(/[^a-z0-9]/gi, '_')}.png`;
-      link.href = exportCanvas.toDataURL("image/png");
+      const resolution = scale > 1 ? `_${width * scale}x${height * scale}` : '';
+      link.download = `${currentProjectName.replace(/[^a-z0-9]/gi, '_')}${resolution}.png`;
+      link.href = exportCanvas.toDataURL("image/png", 1.0);
       link.click();
     };
 
@@ -264,12 +555,12 @@ export function PosterBuilder() {
   const resizeSelectedElement = useCallback((scaleFactor: number) => {
     if (!selectedElement) return;
     
-    if (selectedElement.type === "image") {
+    if (selectedElement.type === "image" || selectedElement.type === "shape" || selectedElement.type === "group") {
       const newWidth = Math.max(50, Math.round(selectedElement.size.width * scaleFactor));
       const newHeight = Math.max(50, Math.round(selectedElement.size.height * scaleFactor));
       updateElement(selectedElement.id, { 
         size: { width: newWidth, height: newHeight } 
-      } as Partial<ImageElement>);
+      } as Partial<ImageElement | ShapeElement | GroupElement>);
     } else if (selectedElement.type === "text") {
       const newFontSize = Math.max(8, Math.min(200, Math.round(selectedElement.fontSize * scaleFactor)));
       updateElement(selectedElement.id, { fontSize: newFontSize } as Partial<TextElement>);
@@ -350,6 +641,41 @@ export function PosterBuilder() {
         return;
       }
 
+      // Copy: Ctrl+C
+      if ((e.ctrlKey || e.metaKey) && e.key === "c") {
+        e.preventDefault();
+        copyElement();
+        return;
+      }
+
+      // Paste: Ctrl+V
+      if ((e.ctrlKey || e.metaKey) && e.key === "v") {
+        e.preventDefault();
+        pasteElement();
+        return;
+      }
+
+      // Duplicate: Ctrl+D
+      if ((e.ctrlKey || e.metaKey) && e.key === "d") {
+        e.preventDefault();
+        duplicateElement();
+        return;
+      }
+
+      // Group: Ctrl+G
+      if ((e.ctrlKey || e.metaKey) && e.key === "g" && !e.shiftKey) {
+        e.preventDefault();
+        groupElements();
+        return;
+      }
+
+      // Ungroup: Ctrl+Shift+G
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === "G" || e.key === "g")) {
+        e.preventDefault();
+        ungroupElements();
+        return;
+      }
+
       // Undo: Ctrl+Z
       if ((e.ctrlKey || e.metaKey) && e.key === "z" && !e.shiftKey) {
         e.preventDefault();
@@ -394,6 +720,8 @@ export function PosterBuilder() {
           setProjectDialogOpen(false);
         } else if (canvasSizeDialogOpen) {
           setCanvasSizeDialogOpen(false);
+        } else if (exportDialogOpen) {
+          setExportDialogOpen(false);
         } else {
           selectElement(null);
         }
@@ -422,25 +750,34 @@ export function PosterBuilder() {
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, [
-    selectedId, deleteSelected, selectElement, moveElement, 
-    textDialogOpen, projectDialogOpen, canvasSizeDialogOpen,
+    selectedId, selectedIds, deleteSelected, selectElement, moveElement, 
+    textDialogOpen, projectDialogOpen, canvasSizeDialogOpen, exportDialogOpen,
     undo, redo, resizeSelectedElement, saveProject, currentProjectId,
-    handleSaveProjectClick, handleLoadProjectClick
+    handleSaveProjectClick, handleLoadProjectClick,
+    copyElement, pasteElement, duplicateElement, groupElements, ungroupElements
   ]);
 
   return (
     <div className="h-screen flex flex-col overflow-hidden">
       <Toolbar
         hasSelection={!!selectedId}
+        selectedCount={selectedIds.length}
+        isGroupSelected={selectedElement?.type === "group"}
         canUndo={canUndo}
         canRedo={canRedo}
+        canPaste={hasClipboard}
         currentSize={canvasSettings.canvasSize}
         projectName={currentProjectName}
         onAddText={handleAddText}
         onAddImage={handleAddImage}
+        onAddShape={handleAddShape}
+        onCopy={copyElement}
+        onPaste={pasteElement}
         onDelete={deleteSelected}
+        onGroup={groupElements}
+        onUngroup={ungroupElements}
         onClearCanvas={handleClearCanvas}
-        onExport={handleExport}
+        onExport={() => setExportDialogOpen(true)}
         onUndo={undo}
         onRedo={redo}
         onSaveProject={handleSaveProjectClick}
@@ -452,18 +789,23 @@ export function PosterBuilder() {
       <div className="flex-1 hidden md:flex overflow-hidden">
         <PropertiesPanel
           element={selectedElement}
+          selectedCount={selectedIds.length}
           canvasSettings={canvasSettings}
           onUpdate={updateElement}
           onUpdateCanvasSettings={updateCanvasSettings}
           onEditText={handleEditText}
+          onGroup={groupElements}
+          onUngroup={ungroupElements}
         />
 
         <Canvas
           elements={elements}
           selectedId={selectedId}
+          selectedIds={selectedIds}
           backgroundColor={canvasSettings.backgroundColor}
           canvasSize={canvasSettings.canvasSize}
           onSelect={selectElement}
+          onToggleSelect={toggleElementSelection}
           onPositionChange={updateElementPosition}
           onRotationChange={updateElementRotation}
           onSizeChange={updateElementSize}
@@ -490,9 +832,11 @@ export function PosterBuilder() {
         <Canvas
           elements={elements}
           selectedId={selectedId}
+          selectedIds={selectedIds}
           backgroundColor={canvasSettings.backgroundColor}
           canvasSize={canvasSettings.canvasSize}
           onSelect={selectElement}
+          onToggleSelect={toggleElementSelection}
           onPositionChange={updateElementPosition}
           onRotationChange={updateElementRotation}
           onSizeChange={updateElementSize}
@@ -508,6 +852,7 @@ export function PosterBuilder() {
           element={selectedElement}
           elements={elements}
           selectedId={selectedId}
+          selectedCount={selectedIds.length}
           canvasSettings={canvasSettings}
           onUpdate={updateElement}
           onUpdateCanvasSettings={updateCanvasSettings}
@@ -517,6 +862,8 @@ export function PosterBuilder() {
           onSendToBack={sendToBack}
           onMoveUp={moveLayerUp}
           onMoveDown={moveLayerDown}
+          onGroup={groupElements}
+          onUngroup={ungroupElements}
         />
       </div>
 
@@ -544,6 +891,13 @@ export function PosterBuilder() {
         onOpenChange={setCanvasSizeDialogOpen}
         currentSize={canvasSettings.canvasSize}
         onSizeChange={handleCanvasSizeChange}
+      />
+
+      <ExportDialog
+        open={exportDialogOpen}
+        onOpenChange={setExportDialogOpen}
+        canvasSize={canvasSettings.canvasSize}
+        onExport={handleExport}
       />
     </div>
   );

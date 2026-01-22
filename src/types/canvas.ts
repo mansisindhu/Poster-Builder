@@ -10,7 +10,7 @@ export interface Size {
 
 export interface BaseElement {
   id: string;
-  type: "text" | "image";
+  type: "text" | "image" | "shape" | "group";
   position: Position;
   zIndex: number;
   rotation: number;
@@ -35,7 +35,42 @@ export interface ImageElement extends BaseElement {
   size: Size;
 }
 
-export type CanvasElement = TextElement | ImageElement;
+// Shape types supported
+export type ShapeType = "rectangle" | "circle" | "ellipse" | "line" | "triangle" | "polygon";
+
+// Point for lines and polygons
+export interface Point {
+  x: number;
+  y: number;
+}
+
+export interface ShapeElement extends BaseElement {
+  type: "shape";
+  shapeType: ShapeType;
+  size: Size;
+  fillColor: string;
+  strokeColor: string;
+  strokeWidth: number;
+  borderRadius: number; // For rectangles
+  points: Point[]; // For lines and polygons (relative to element position)
+}
+
+// Group element that contains multiple child elements
+export interface GroupElement extends BaseElement {
+  type: "group";
+  childIds: string[]; // IDs of child elements
+  size: Size; // Bounding box size
+}
+
+export type CanvasElement = TextElement | ImageElement | ShapeElement | GroupElement;
+
+export interface ShapeFormData {
+  shapeType: ShapeType;
+  fillColor: string;
+  strokeColor: string;
+  strokeWidth: number;
+  borderRadius: number;
+}
 
 export interface TextFormData {
   content: string;

@@ -1,15 +1,16 @@
 "use client";
 
 import React, { useRef, useEffect, useState, useCallback, useContext } from "react";
-import { CanvasElement as CanvasElementType, Position } from "@/types/canvas";
+import { CanvasElement as CanvasElementType, Position, ShapeElement, GroupElement } from "@/types/canvas";
 import { cn } from "@/lib/utils";
 import { CanvasScaleContext } from "./Canvas";
 import { RotateCw, GripVertical } from "lucide-react";
 
 interface CanvasElementProps {
   element: CanvasElementType;
+  allElements?: CanvasElementType[];
   isSelected: boolean;
-  onSelect: () => void;
+  onSelect: (ctrlKey?: boolean) => void;
   onPositionChange: (position: Position) => void;
   onRotationChange: (rotation: number) => void;
   onSizeChange?: (width: number, height: number, position?: Position) => void;
@@ -22,8 +23,192 @@ interface CanvasElementProps {
 
 const resizeHandles = ["nw", "ne", "sw", "se"] as const;
 
+// Component for rendering shape SVG content
+function ShapeRenderer({ shape }: { shape: ShapeElement }) {
+  const { size, shapeType, fillColor, strokeColor, strokeWidth, borderRadius, points } = shape;
+  const { width, height } = size;
+  
+  // Adjust for stroke width to prevent clipping
+  const padding = strokeWidth;
+  const svgWidth = width + padding * 2;
+  const svgHeight = height + padding * 2;
+  
+  // Helper function to scale points to fit current size
+  const getScaledPoints = (pts: typeof points) => {
+    if (!pts || pts.length === 0) return [];
+    
+    // Find the bounding box of the original points
+    const minX = Math.min(...pts.map(p => p.x));
+    const maxX = Math.max(...pts.map(p => p.x));
+    const minY = Math.min(...pts.map(p => p.y));
+    const maxY = Math.max(...pts.map(p => p.y));
+    
+    const originalWidth = maxX - minX || 1;
+    const originalHeight = maxY - minY || 1;
+    
+    // Scale points to fit current size
+    return pts.map(p => ({
+      x: ((p.x - minX) / originalWidth) * width,
+      y: ((p.y - minY) / originalHeight) * height
+    }));
+  };
+  
+  const renderShape = () => {
+    switch (shapeType) {
+      case "rectangle":
+        return (
+          <rect
+            x={padding}
+            y={padding}
+            width={width}
+            height={height}
+            rx={borderRadius}
+            ry={borderRadius}
+            fill={fillColor}
+            stroke={strokeColor}
+            strokeWidth={strokeWidth}
+          />
+        );
+      
+      case "circle":
+        const radius = Math.min(width, height) / 2;
+        return (
+          <circle
+            cx={padding + width / 2}
+            cy={padding + height / 2}
+            r={radius}
+            fill={fillColor}
+            stroke={strokeColor}
+            strokeWidth={strokeWidth}
+          />
+        );
+      
+      case "ellipse":
+        return (
+          <ellipse
+            cx={padding + width / 2}
+            cy={padding + height / 2}
+            rx={width / 2}
+            ry={height / 2}
+            fill={fillColor}
+            stroke={strokeColor}
+            strokeWidth={strokeWidth}
+          />
+        );
+      
+      case "line":
+        // For lines, scale the points to current size
+        if (points && points.length >= 2) {
+          const scaledPts = getScaledPoints(points);
+          return (
+            <line
+              x1={padding + scaledPts[0].x}
+              y1={padding + scaledPts[0].y}
+              x2={padding + scaledPts[1].x}
+              y2={padding + scaledPts[1].y}
+              stroke={strokeColor}
+              strokeWidth={Math.max(strokeWidth, 2)}
+              strokeLinecap="round"
+            />
+          );
+        }
+        // Default horizontal line
+        return (
+          <line
+            x1={padding}
+            y1={padding + height / 2}
+            x2={padding + width}
+            y2={padding + height / 2}
+            stroke={strokeColor}
+            strokeWidth={Math.max(strokeWidth, 2)}
+            strokeLinecap="round"
+          />
+        );
+      
+      case "triangle":
+        // Scale points to fit current size
+        if (points && points.length >= 3) {
+          const scaledPts = getScaledPoints(points);
+          const pointsStr = scaledPts.map(p => `${padding + p.x},${padding + p.y}`).join(" ");
+          return (
+            <polygon
+              points={pointsStr}
+              fill={fillColor}
+              stroke={strokeColor}
+              strokeWidth={strokeWidth}
+              strokeLinejoin="round"
+            />
+          );
+        }
+        // Default equilateral-ish triangle
+        const defaultTrianglePoints = `${padding + width / 2},${padding} ${padding},${padding + height} ${padding + width},${padding + height}`;
+        return (
+          <polygon
+            points={defaultTrianglePoints}
+            fill={fillColor}
+            stroke={strokeColor}
+            strokeWidth={strokeWidth}
+            strokeLinejoin="round"
+          />
+        );
+      
+      case "polygon":
+        if (points && points.length >= 3) {
+          const scaledPts = getScaledPoints(points);
+          const pointsStr = scaledPts.map(p => `${padding + p.x},${padding + p.y}`).join(" ");
+          return (
+            <polygon
+              points={pointsStr}
+              fill={fillColor}
+              stroke={strokeColor}
+              strokeWidth={strokeWidth}
+              strokeLinejoin="round"
+            />
+          );
+        }
+        // Default pentagon
+        const sides = 5;
+        const cx = width / 2;
+        const cy = height / 2;
+        const r = Math.min(width, height) / 2;
+        const defaultPoints = Array.from({ length: sides }, (_, i) => {
+          const angle = (i * 2 * Math.PI) / sides - Math.PI / 2;
+          return `${padding + cx + r * Math.cos(angle)},${padding + cy + r * Math.sin(angle)}`;
+        }).join(" ");
+        return (
+          <polygon
+            points={defaultPoints}
+            fill={fillColor}
+            stroke={strokeColor}
+            strokeWidth={strokeWidth}
+            strokeLinejoin="round"
+          />
+        );
+      
+      default:
+        return null;
+    }
+  };
+  
+  return (
+    <svg
+      width={svgWidth}
+      height={svgHeight}
+      viewBox={`0 0 ${svgWidth} ${svgHeight}`}
+      style={{ 
+        margin: -padding,
+        overflow: "visible",
+        display: "block"
+      }}
+    >
+      {renderShape()}
+    </svg>
+  );
+}
+
 export function CanvasElement({
   element,
+  allElements = [],
   isSelected,
   onSelect,
   onPositionChange,
@@ -81,7 +266,10 @@ export function CanvasElement({
   const handlePointerDown = useCallback(
     (e: React.MouseEvent | React.TouchEvent) => {
       e.stopPropagation();
-      onSelect();
+      
+      // Check for Ctrl/Cmd key for multi-selection
+      const ctrlKey = 'ctrlKey' in e ? (e.ctrlKey || e.metaKey) : false;
+      onSelect(ctrlKey);
 
       const { clientX, clientY } = getClientCoords(e);
 
@@ -128,7 +316,7 @@ export function CanvasElement({
         
         setIsResizing(true);
         setResizeHandle(target.dataset.resizeHandle);
-        if (element.type === "image") {
+        if (element.type === "image" || element.type === "shape" || element.type === "group") {
           resizeStart.current = {
             x: clientX,
             y: clientY,
@@ -193,7 +381,7 @@ export function CanvasElement({
         const dx = (clientX - textWidthStart.current.x) / scale;
         const newWidth = Math.max(50, textWidthStart.current.width + dx);
         onWidthChange?.(newWidth);
-      } else if (isResizing && resizeStart.current && element.type === "image") {
+      } else if (isResizing && resizeStart.current && (element.type === "image" || element.type === "shape" || element.type === "group")) {
         const dx = (clientX - resizeStart.current.x) / scale;
         const dy = (clientY - resizeStart.current.y) / scale;
 
@@ -226,7 +414,7 @@ export function CanvasElement({
         }
 
         onPositionChange({ x: newLeft, y: newTop });
-        onSizeChange?.(newWidth, newHeight);
+        onSizeChange?.(newWidth, newHeight, { x: newLeft, y: newTop });
       } else if (isRotating && rotateStart.current) {
         const currentAngle = getAngle(
           rotateStart.current.centerX,
@@ -316,7 +504,80 @@ export function CanvasElement({
         >
           {element.content}
         </div>
-      ) : (
+      ) : element.type === "shape" ? (
+        <div
+          style={{
+            width: element.size.width,
+            height: element.size.height,
+          }}
+        >
+          <ShapeRenderer shape={element} />
+        </div>
+      ) : element.type === "group" ? (
+        <div
+          style={{
+            width: element.size.width,
+            height: element.size.height,
+            position: "relative",
+          }}
+        >
+          {/* Render child elements within the group */}
+          {element.childIds.map(childId => {
+            const childElement = allElements.find(el => el.id === childId);
+            if (!childElement) return null;
+            
+            return (
+              <div
+                key={childId}
+                style={{
+                  position: "absolute",
+                  left: childElement.position.x,
+                  top: childElement.position.y,
+                  transform: `rotate(${childElement.rotation}deg)`,
+                  transformOrigin: "center center",
+                  pointerEvents: "none",
+                }}
+              >
+                {childElement.type === "text" ? (
+                  <div
+                    className="px-3 py-2 whitespace-pre-wrap break-words"
+                    style={{
+                      fontSize: childElement.fontSize,
+                      fontFamily: childElement.fontFamily,
+                      fontWeight: childElement.fontWeight,
+                      fontStyle: childElement.fontStyle,
+                      textAlign: childElement.textAlign,
+                      color: childElement.color,
+                      width: childElement.width,
+                      minWidth: 50,
+                    }}
+                  >
+                    {childElement.content}
+                  </div>
+                ) : childElement.type === "shape" ? (
+                  <div style={{ width: childElement.size.width, height: childElement.size.height }}>
+                    <ShapeRenderer shape={childElement} />
+                  </div>
+                ) : childElement.type === "image" ? (
+                  <div style={{ width: childElement.size.width, height: childElement.size.height }}>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={childElement.src}
+                      alt={childElement.name}
+                      className="max-w-full max-h-full object-contain"
+                      draggable={false}
+                    />
+                  </div>
+                ) : null}
+              </div>
+            );
+          })}
+          {/* Group border indicator */}
+          {isSelected && (
+            <div className="absolute inset-0 border-2 border-dashed border-primary/50 pointer-events-none" />
+          )}
+        </div>
+      ) : element.type === "image" ? (
         <div
           className="flex items-center justify-center"
           style={{
@@ -332,10 +593,10 @@ export function CanvasElement({
             draggable={false}
           />
         </div>
-      )}
+      ) : null}
 
-      {/* Resize handles for images */}
-      {isSelected && element.type === "image" && (
+      {/* Resize handles for images, shapes, and groups */}
+      {isSelected && (element.type === "image" || element.type === "shape" || element.type === "group") && (
         <>
           {resizeHandles.map((handle) => (
             <div

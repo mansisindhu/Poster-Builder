@@ -1,22 +1,33 @@
 "use client";
 
-import React, { useRef } from "react";
+import React, { useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { 
   Type, Image, Trash2, Download, RefreshCw, Undo2, Redo2, 
-  Save, FolderOpen, FileImage, Settings2 
+  Save, FolderOpen, FileImage, Settings2,
+  Square, Circle, Triangle, Minus, Pentagon, Hexagon, Shapes, ChevronDown,
+  Copy, Clipboard, Group, Ungroup
 } from "lucide-react";
-import { CanvasSize } from "@/types/canvas";
+import { CanvasSize, ShapeType } from "@/types/canvas";
+import { cn } from "@/lib/utils";
 
 interface ToolbarProps {
   hasSelection: boolean;
+  selectedCount: number;
+  isGroupSelected: boolean;
   canUndo: boolean;
   canRedo: boolean;
+  canPaste: boolean;
   currentSize: CanvasSize;
   projectName: string;
   onAddText: () => void;
   onAddImage: (file: File) => void;
+  onAddShape: (shapeType: ShapeType) => void;
+  onCopy: () => void;
+  onPaste: () => void;
   onDelete: () => void;
+  onGroup: () => void;
+  onUngroup: () => void;
   onClearCanvas: () => void;
   onExport: () => void;
   onUndo: () => void;
@@ -26,15 +37,42 @@ interface ToolbarProps {
   onCanvasSize: () => void;
 }
 
+// Shape icons mapping
+const shapeIcons: Record<ShapeType, React.ReactNode> = {
+  rectangle: <Square className="w-4 h-4" />,
+  circle: <Circle className="w-4 h-4" />,
+  ellipse: <Circle className="w-4 h-4 scale-x-125" />,
+  line: <Minus className="w-4 h-4" />,
+  triangle: <Triangle className="w-4 h-4" />,
+  polygon: <Pentagon className="w-4 h-4" />,
+};
+
+const shapeLabels: Record<ShapeType, string> = {
+  rectangle: "Rectangle",
+  circle: "Circle",
+  ellipse: "Ellipse",
+  line: "Line",
+  triangle: "Triangle",
+  polygon: "Polygon",
+};
+
 export function Toolbar({
   hasSelection,
+  selectedCount,
+  isGroupSelected,
   canUndo,
   canRedo,
+  canPaste,
   currentSize,
   projectName,
   onAddText,
   onAddImage,
+  onAddShape,
+  onCopy,
+  onPaste,
   onDelete,
+  onGroup,
+  onUngroup,
   onClearCanvas,
   onExport,
   onUndo,
@@ -44,6 +82,7 @@ export function Toolbar({
   onCanvasSize,
 }: ToolbarProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [shapeMenuOpen, setShapeMenuOpen] = useState(false);
 
   const handleImageClick = () => {
     fileInputRef.current?.click();
@@ -55,6 +94,11 @@ export function Toolbar({
       onAddImage(file);
       e.target.value = "";
     }
+  };
+
+  const handleAddShape = (shapeType: ShapeType) => {
+    onAddShape(shapeType);
+    setShapeMenuOpen(false);
   };
 
   return (
@@ -130,6 +174,47 @@ export function Toolbar({
           <span className="hidden md:inline">Image</span>
         </Button>
 
+        {/* Shape dropdown */}
+        <div className="relative">
+          <Button 
+            variant="outline" 
+            size="sm" 
+            onClick={() => setShapeMenuOpen(!shapeMenuOpen)}
+            className="px-2 md:px-3"
+          >
+            <Shapes className="w-4 h-4 md:mr-2" />
+            <span className="hidden md:inline">Shape</span>
+            <ChevronDown className="w-3 h-3 ml-1" />
+          </Button>
+          
+          {shapeMenuOpen && (
+            <>
+              {/* Backdrop */}
+              <div 
+                className="fixed inset-0 z-40" 
+                onClick={() => setShapeMenuOpen(false)}
+              />
+              
+              {/* Dropdown menu */}
+              <div className="absolute top-full left-0 mt-1 bg-background border rounded-md shadow-lg z-50 min-w-[140px] py-1">
+                {(Object.keys(shapeLabels) as ShapeType[]).map((shapeType) => (
+                  <button
+                    key={shapeType}
+                    className={cn(
+                      "flex items-center gap-2 w-full px-3 py-2 text-sm text-left",
+                      "hover:bg-muted transition-colors"
+                    )}
+                    onClick={() => handleAddShape(shapeType)}
+                  >
+                    {shapeIcons[shapeType]}
+                    {shapeLabels[shapeType]}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+
         <input
           ref={fileInputRef}
           type="file"
@@ -137,6 +222,55 @@ export function Toolbar({
           className="hidden"
           onChange={handleFileChange}
         />
+
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={onCopy}
+          disabled={!hasSelection}
+          className="px-2"
+          title="Copy (Ctrl+C)"
+        >
+          <Copy className="w-4 h-4" />
+        </Button>
+
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={onPaste}
+          disabled={!canPaste}
+          className="px-2"
+          title="Paste (Ctrl+V)"
+        >
+          <Clipboard className="w-4 h-4" />
+        </Button>
+
+        {/* Group/Ungroup buttons */}
+        {selectedCount >= 2 && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onGroup}
+            className="px-2 md:px-3"
+            title="Group (Ctrl+G)"
+          >
+            <Group className="w-4 h-4 md:mr-2" />
+            <span className="hidden md:inline">Group</span>
+          </Button>
+        )}
+
+        {isGroupSelected && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onUngroup}
+            className="px-2 md:px-3"
+            title="Ungroup (Ctrl+Shift+G)"
+          >
+            <Ungroup className="w-4 h-4 md:mr-2" />
+            <span className="hidden md:inline">Ungroup</span>
+          </Button>
+        )}
 
         <Button
           variant="outline"

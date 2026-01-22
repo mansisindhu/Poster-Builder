@@ -2,8 +2,8 @@
 
 import { useState, useCallback, useRef } from "react";
 import { 
-  CanvasElement, TextElement, ImageElement, TextFormData, 
-  Position, CanvasSettings, CanvasState, CanvasSize,
+  CanvasElement, TextElement, ImageElement, ShapeElement, GroupElement, TextFormData, ShapeFormData,
+  Position, CanvasSettings, CanvasState, CanvasSize, ShapeType, Point, Size,
   Project, DEFAULT_CANVAS_SIZE 
 } from "@/types/canvas";
 
@@ -55,18 +55,26 @@ function cloneState(state: CanvasState): CanvasState {
 
 export function useCanvas() {
   const [historyState, setHistoryState] = useState<HistoryState>(initialHistoryState);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [currentProjectId, setCurrentProjectId] = useState<string | null>(null);
   const [currentProjectName, setCurrentProjectName] = useState<string>("Untitled Project");
+  const [hasClipboard, setHasClipboard] = useState(false);
   
   // Snapshot of state before an interaction begins
   const interactionSnapshotRef = useRef<CanvasState | null>(null);
+  
+  // Clipboard for copy/paste functionality
+  const clipboardRef = useRef<CanvasElement | null>(null);
 
   // Derived state from history
   const present = historyState.present ?? initialState;
   const elements = present.elements ?? [];
   const canvasSettings = present.canvasSettings ?? defaultSettings;
+  
+  // For backwards compatibility, selectedId is the first selected element
+  const selectedId = selectedIds.length > 0 ? selectedIds[0] : null;
   const selectedElement = elements.find((el) => el.id === selectedId) || null;
+  const selectedElements = elements.filter((el) => selectedIds.includes(el.id));
 
   // Check if undo/redo is available
   const canUndo = historyState.past.length > 0;
@@ -203,7 +211,7 @@ export function useCanvas() {
         future: [],
       };
     });
-    setSelectedId(id);
+    setSelectedIds([id]);
   }, []);
 
   const addImageElement = useCallback((src: string, name: string, width: number, height: number) => {
@@ -245,8 +253,92 @@ export function useCanvas() {
         future: [],
       };
     });
-    setSelectedId(id);
+    setSelectedIds([id]);
   }, []);
+
+  // Generate default points for shapes that need them
+  const getDefaultPointsForShape = useCallback((shapeType: ShapeType, width: number, height: number): Point[] => {
+    switch (shapeType) {
+      case "line":
+        return [
+          { x: 0, y: height / 2 },
+          { x: width, y: height / 2 }
+        ];
+      case "triangle":
+        return [
+          { x: width / 2, y: 0 },
+          { x: 0, y: height },
+          { x: width, y: height }
+        ];
+      case "polygon":
+        // Default to a pentagon
+        const sides = 5;
+        const centerX = width / 2;
+        const centerY = height / 2;
+        const radius = Math.min(width, height) / 2;
+        const points: Point[] = [];
+        for (let i = 0; i < sides; i++) {
+          const angle = (i * 2 * Math.PI) / sides - Math.PI / 2;
+          points.push({
+            x: centerX + radius * Math.cos(angle),
+            y: centerY + radius * Math.sin(angle)
+          });
+        }
+        return points;
+      default:
+        return [];
+    }
+  }, []);
+
+  const addShapeElement = useCallback((shapeType: ShapeType, data?: Partial<ShapeFormData>) => {
+    const id = generateId();
+    
+    // Set default dimensions based on shape type
+    let defaultWidth = 150;
+    let defaultHeight = 150;
+    
+    if (shapeType === "line") {
+      defaultWidth = 150;
+      defaultHeight = 4;
+    } else if (shapeType === "ellipse") {
+      // Ellipse should have different width/height to distinguish from circle
+      defaultWidth = 200;
+      defaultHeight = 120;
+    }
+    
+    setHistoryState((prev) => {
+      const canvasSize = prev.present.canvasSettings.canvasSize;
+      const newElement: ShapeElement = {
+        id,
+        type: "shape",
+        shapeType,
+        position: { 
+          x: Math.min(50 + Math.random() * 200, canvasSize.width - defaultWidth), 
+          y: Math.min(50 + Math.random() * 200, canvasSize.height - defaultHeight)
+        },
+        zIndex: prev.present.elements.length + 1,
+        rotation: 0,
+        size: { width: defaultWidth, height: defaultHeight },
+        fillColor: data?.fillColor ?? "#3b82f6",
+        strokeColor: data?.strokeColor ?? data?.fillColor ?? "#3b82f6",
+        strokeWidth: data?.strokeWidth ?? 2,
+        borderRadius: data?.borderRadius ?? 0,
+        points: getDefaultPointsForShape(shapeType, defaultWidth, defaultHeight),
+      };
+      const newElements = [...prev.present.elements, newElement];
+      const newPresent = { ...prev.present, elements: newElements };
+      const newPast = [...prev.past, cloneState(prev.present)];
+      if (newPast.length > MAX_HISTORY_SIZE) {
+        newPast.shift();
+      }
+      return {
+        past: newPast,
+        present: newPresent,
+        future: [],
+      };
+    });
+    setSelectedIds([id]);
+  }, [getDefaultPointsForShape]);
 
   const updateElement = useCallback((id: string, updates: Partial<CanvasElement>) => {
     setHistoryState((prev) => {
@@ -293,7 +385,7 @@ export function useCanvas() {
   const updateElementSize = useCallback((id: string, size: { width: number; height: number }, position?: Position) => {
     setHistoryState((prev) => {
       const newElements = prev.present.elements.map((el) => {
-        if (el.id === id && el.type === "image") {
+        if (el.id === id && (el.type === "image" || el.type === "shape" || el.type === "group")) {
           return position ? { ...el, size, position } : { ...el, size };
         }
         return el;
@@ -334,33 +426,253 @@ export function useCanvas() {
         future: [],
       };
     });
-    setSelectedId((prevSelectedId) => (prevSelectedId === id ? null : prevSelectedId));
+    setSelectedIds(prev => prev.filter(selectedId => selectedId !== id));
   }, []);
 
   const deleteSelected = useCallback(() => {
-    setSelectedId((prevSelectedId) => {
-      if (prevSelectedId) {
-        setHistoryState((prev) => {
-          const newElements = prev.present.elements.filter((el) => el.id !== prevSelectedId);
-          const newPresent = { ...prev.present, elements: newElements };
-          const newPast = [...prev.past, cloneState(prev.present)];
-          if (newPast.length > MAX_HISTORY_SIZE) {
-            newPast.shift();
-          }
-          return {
-            past: newPast,
-            present: newPresent,
-            future: [],
-          };
-        });
-        return null;
+    if (selectedIds.length === 0) return;
+    
+    setHistoryState((prev) => {
+      const newElements = prev.present.elements.filter((el) => !selectedIds.includes(el.id));
+      const newPresent = { ...prev.present, elements: newElements };
+      const newPast = [...prev.past, cloneState(prev.present)];
+      if (newPast.length > MAX_HISTORY_SIZE) {
+        newPast.shift();
       }
-      return prevSelectedId;
+      return {
+        past: newPast,
+        present: newPresent,
+        future: [],
+      };
+    });
+    setSelectedIds([]);
+  }, [selectedIds]);
+
+  // Copy the currently selected element to clipboard
+  const copyElement = useCallback(() => {
+    if (!selectedId) return false;
+    
+    const elementToCopy = elements.find(el => el.id === selectedId);
+    if (elementToCopy) {
+      // Deep clone the element for the clipboard
+      clipboardRef.current = JSON.parse(JSON.stringify(elementToCopy));
+      setHasClipboard(true);
+      return true;
+    }
+    return false;
+  }, [selectedId, elements]);
+
+  // Paste the copied element onto the canvas
+  const pasteElement = useCallback(() => {
+    const copiedElement = clipboardRef.current;
+    if (!copiedElement) return null;
+
+    const newId = generateId();
+    
+    // Offset the position slightly so the pasted element is visible
+    const offset = 20;
+    
+    setHistoryState((prev) => {
+      const canvasSize = prev.present.canvasSettings.canvasSize;
+      
+      // Create a new element based on the copied one
+      const newElement: CanvasElement = {
+        ...JSON.parse(JSON.stringify(copiedElement)),
+        id: newId,
+        position: {
+          x: Math.min(copiedElement.position.x + offset, canvasSize.width - 50),
+          y: Math.min(copiedElement.position.y + offset, canvasSize.height - 50),
+        },
+        zIndex: prev.present.elements.length + 1,
+      };
+      
+      const newElements = [...prev.present.elements, newElement];
+      const newPresent = { ...prev.present, elements: newElements };
+      const newPast = [...prev.past, cloneState(prev.present)];
+      if (newPast.length > MAX_HISTORY_SIZE) {
+        newPast.shift();
+      }
+      return {
+        past: newPast,
+        present: newPresent,
+        future: [],
+      };
+    });
+    
+    setSelectedIds([newId]);
+    return newId;
+  }, []);
+
+  // Duplicate the currently selected element (copy + paste in one action)
+  const duplicateElement = useCallback(() => {
+    if (copyElement()) {
+      return pasteElement();
+    }
+    return null;
+  }, [copyElement, pasteElement]);
+
+  // Helper to get element bounds
+  const getElementBounds = useCallback((element: CanvasElement): { x: number; y: number; width: number; height: number } => {
+    let width = 0;
+    let height = 0;
+    
+    if (element.type === "text") {
+      width = element.width;
+      height = element.fontSize * 1.5; // Approximate
+    } else if (element.type === "image" || element.type === "shape") {
+      width = element.size.width;
+      height = element.size.height;
+    } else if (element.type === "group") {
+      width = element.size.width;
+      height = element.size.height;
+    }
+    
+    return {
+      x: element.position.x,
+      y: element.position.y,
+      width,
+      height,
+    };
+  }, []);
+
+  // Group selected elements
+  const groupElements = useCallback(() => {
+    if (selectedIds.length < 2) return null;
+    
+    const groupId = generateId();
+    
+    setHistoryState((prev) => {
+      const elementsToGroup = prev.present.elements.filter(el => selectedIds.includes(el.id));
+      if (elementsToGroup.length < 2) return prev;
+      
+      // Calculate bounding box of all selected elements
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+      
+      elementsToGroup.forEach(el => {
+        const bounds = getElementBounds(el);
+        minX = Math.min(minX, bounds.x);
+        minY = Math.min(minY, bounds.y);
+        maxX = Math.max(maxX, bounds.x + bounds.width);
+        maxY = Math.max(maxY, bounds.y + bounds.height);
+      });
+      
+      const groupWidth = maxX - minX;
+      const groupHeight = maxY - minY;
+      
+      // Update child elements to have positions relative to group
+      const updatedElements = prev.present.elements.map(el => {
+        if (selectedIds.includes(el.id)) {
+          return {
+            ...el,
+            position: {
+              x: el.position.x - minX,
+              y: el.position.y - minY,
+            },
+          };
+        }
+        return el;
+      });
+      
+      // Create the group element
+      const groupElement: GroupElement = {
+        id: groupId,
+        type: "group",
+        position: { x: minX, y: minY },
+        zIndex: Math.max(...elementsToGroup.map(el => el.zIndex)) + 1,
+        rotation: 0,
+        childIds: selectedIds,
+        size: { width: groupWidth, height: groupHeight },
+      };
+      
+      // Add group element and keep child elements (but they won't be rendered directly)
+      const newElements = [...updatedElements, groupElement];
+      
+      const newPresent = { ...prev.present, elements: newElements };
+      const newPast = [...prev.past, cloneState(prev.present)];
+      if (newPast.length > MAX_HISTORY_SIZE) {
+        newPast.shift();
+      }
+      
+      return {
+        past: newPast,
+        present: newPresent,
+        future: [],
+      };
+    });
+    
+    setSelectedIds([groupId]);
+    return groupId;
+  }, [selectedIds, getElementBounds]);
+
+  // Ungroup a group element
+  const ungroupElements = useCallback(() => {
+    if (selectedIds.length !== 1) return false;
+    
+    const groupId = selectedIds[0];
+    
+    // First, check if it's a group and get child IDs
+    const groupElement = elements.find(el => el.id === groupId);
+    if (!groupElement || groupElement.type !== "group") return false;
+    
+    const childIds = groupElement.childIds;
+    const groupPosition = groupElement.position;
+    const groupRotation = groupElement.rotation;
+    
+    setHistoryState((prev) => {
+      // Update child elements to have absolute positions again
+      const updatedElements = prev.present.elements
+        .filter(el => el.id !== groupId) // Remove the group element
+        .map(el => {
+          if (childIds.includes(el.id)) {
+            // Convert relative position back to absolute
+            return {
+              ...el,
+              position: {
+                x: el.position.x + groupPosition.x,
+                y: el.position.y + groupPosition.y,
+              },
+              rotation: ((el.rotation || 0) + groupRotation) % 360,
+            };
+          }
+          return el;
+        });
+      
+      const newPresent = { ...prev.present, elements: updatedElements };
+      const newPast = [...prev.past, cloneState(prev.present)];
+      if (newPast.length > MAX_HISTORY_SIZE) {
+        newPast.shift();
+      }
+      
+      return {
+        past: newPast,
+        present: newPresent,
+        future: [],
+      };
+    });
+    
+    setSelectedIds(childIds);
+    return true;
+  }, [selectedIds, elements]);
+
+  // Select a single element (replaces current selection)
+  const selectElement = useCallback((id: string | null) => {
+    setSelectedIds(id ? [id] : []);
+  }, []);
+
+  // Add an element to the current selection (for Ctrl+Click)
+  const toggleElementSelection = useCallback((id: string) => {
+    setSelectedIds(prev => {
+      if (prev.includes(id)) {
+        return prev.filter(selectedId => selectedId !== id);
+      } else {
+        return [...prev, id];
+      }
     });
   }, []);
 
-  const selectElement = useCallback((id: string | null) => {
-    setSelectedId(id);
+  // Select multiple elements
+  const selectElements = useCallback((ids: string[]) => {
+    setSelectedIds(ids);
   }, []);
 
   const clearCanvas = useCallback(() => {
@@ -376,12 +688,12 @@ export function useCanvas() {
         future: [],
       };
     });
-    setSelectedId(null);
+    setSelectedIds([]);
   }, []);
 
   const newProject = useCallback(() => {
     setHistoryState(initialHistoryState);
-    setSelectedId(null);
+    setSelectedIds([]);
     setCurrentProjectId(null);
     setCurrentProjectName("Untitled Project");
   }, []);
@@ -563,7 +875,7 @@ export function useCanvas() {
           present: loadedState,
           future: [],
         });
-        setSelectedId(null);
+        setSelectedIds([]);
         setCurrentProjectId(project.id);
         setCurrentProjectName(project.name);
         return true;
@@ -604,7 +916,9 @@ export function useCanvas() {
   return {
     elements,
     selectedElement,
+    selectedElements,
     selectedId,
+    selectedIds,
     canvasSettings,
     canUndo,
     canRedo,
@@ -616,6 +930,7 @@ export function useCanvas() {
     setCanvasSize,
     addTextElement,
     addImageElement,
+    addShapeElement,
     updateElement,
     updateElementPosition,
     updateElementRotation,
@@ -625,7 +940,16 @@ export function useCanvas() {
     commitInteraction,
     deleteElement,
     deleteSelected,
+    copyElement,
+    pasteElement,
+    duplicateElement,
+    hasClipboard,
     selectElement,
+    selectElements,
+    toggleElementSelection,
+    groupElements,
+    ungroupElements,
+    getElementBounds,
     clearCanvas,
     newProject,
     moveElement,

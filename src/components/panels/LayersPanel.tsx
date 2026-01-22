@@ -1,9 +1,9 @@
 "use client";
 
 import React from "react";
-import { CanvasElement } from "@/types/canvas";
+import { CanvasElement, ShapeType } from "@/types/canvas";
 import { cn } from "@/lib/utils";
-import { Type, Image, ChevronUp, ChevronDown, ChevronsUp, ChevronsDown, RotateCw } from "lucide-react";
+import { Type, Image, ChevronUp, ChevronDown, ChevronsUp, ChevronsDown, RotateCw, Square, Circle, Triangle, Minus, Pentagon, Group } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 interface LayersPanelProps {
@@ -16,6 +16,51 @@ interface LayersPanelProps {
   onMoveDown: (id: string) => void;
 }
 
+// Get shape icon based on shape type
+function getShapeIcon(shapeType: ShapeType) {
+  switch (shapeType) {
+    case "rectangle":
+      return <Square className="w-4 h-4 text-muted-foreground" />;
+    case "circle":
+      return <Circle className="w-4 h-4 text-muted-foreground" />;
+    case "ellipse":
+      return <Circle className="w-4 h-4 text-muted-foreground scale-x-125" />;
+    case "line":
+      return <Minus className="w-4 h-4 text-muted-foreground" />;
+    case "triangle":
+      return <Triangle className="w-4 h-4 text-muted-foreground" />;
+    case "polygon":
+      return <Pentagon className="w-4 h-4 text-muted-foreground" />;
+    default:
+      return <Square className="w-4 h-4 text-muted-foreground" />;
+  }
+}
+
+// Get display name for element
+function getElementDisplayName(element: CanvasElement, allElements: CanvasElement[]): string {
+  switch (element.type) {
+    case "text":
+      const text = element.content.substring(0, 20);
+      return text + (element.content.length > 20 ? "..." : "");
+    case "image":
+      return element.name;
+    case "shape":
+      const shapeLabels: Record<ShapeType, string> = {
+        rectangle: "Rectangle",
+        circle: "Circle",
+        ellipse: "Ellipse",
+        line: "Line",
+        triangle: "Triangle",
+        polygon: "Polygon",
+      };
+      return shapeLabels[element.shapeType] || "Shape";
+    case "group":
+      return `Group (${element.childIds.length} items)`;
+    default:
+      return "Element";
+  }
+}
+
 export function LayersPanel({ 
   elements, 
   selectedId, 
@@ -25,8 +70,18 @@ export function LayersPanel({
   onMoveUp,
   onMoveDown,
 }: LayersPanelProps) {
-  // Sort elements by zIndex (highest first for display)
-  const sortedElements = [...elements].sort((a, b) => b.zIndex - a.zIndex);
+  // Get IDs of elements that are children of groups (they shouldn't appear as separate layers)
+  const groupChildIds = new Set<string>();
+  elements.forEach(el => {
+    if (el.type === "group") {
+      el.childIds.forEach(id => groupChildIds.add(id));
+    }
+  });
+  
+  // Filter out group children and sort by zIndex (highest first for display)
+  const sortedElements = [...elements]
+    .filter(el => !groupChildIds.has(el.id))
+    .sort((a, b) => b.zIndex - a.zIndex);
   
   return (
     <aside className="w-60 bg-background border-l flex flex-col">
@@ -98,6 +153,10 @@ export function LayersPanel({
                 <div className="w-8 h-8 bg-muted rounded flex items-center justify-center flex-shrink-0 overflow-hidden">
                   {element.type === "text" ? (
                     <Type className="w-4 h-4 text-muted-foreground" />
+                  ) : element.type === "shape" ? (
+                    getShapeIcon(element.shapeType)
+                  ) : element.type === "group" ? (
+                    <Group className="w-4 h-4 text-muted-foreground" />
                   ) : (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img
@@ -109,13 +168,10 @@ export function LayersPanel({
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="text-sm font-medium truncate">
-                    {element.type === "text"
-                      ? element.content.substring(0, 20) +
-                        (element.content.length > 20 ? "..." : "")
-                      : element.name}
+                    {getElementDisplayName(element, elements)}
                   </div>
                   <div className="text-xs text-muted-foreground capitalize flex items-center gap-1">
-                    {element.type}
+                    {element.type === "shape" ? element.shapeType : element.type}
                     {element.rotation !== 0 && (
                       <span className="flex items-center gap-0.5 text-muted-foreground">
                         <RotateCw className="w-3 h-3" />

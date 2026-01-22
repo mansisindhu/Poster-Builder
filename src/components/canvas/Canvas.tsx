@@ -8,9 +8,11 @@ import { cn } from "@/lib/utils";
 interface CanvasProps {
   elements: CanvasElementType[];
   selectedId: string | null;
+  selectedIds: string[];
   backgroundColor: string;
   canvasSize: CanvasSize;
   onSelect: (id: string | null) => void;
+  onToggleSelect: (id: string) => void;
   onPositionChange: (id: string, position: Position) => void;
   onRotationChange: (id: string, rotation: number) => void;
   onSizeChange: (id: string, size: { width: number; height: number }, position?: Position) => void;
@@ -44,9 +46,11 @@ const SNAP_THRESHOLD = 10; // Pixels within which to snap and show guides
 export function Canvas({
   elements,
   selectedId,
+  selectedIds,
   backgroundColor,
   canvasSize,
   onSelect,
+  onToggleSelect,
   onPositionChange,
   onRotationChange,
   onSizeChange,
@@ -117,7 +121,7 @@ export function Canvas({
     let elementWidth = 0;
     let elementHeight = 0;
     
-    if (element.type === "image") {
+    if (element.type === "image" || element.type === "shape" || element.type === "group") {
       elementWidth = element.size.width;
       elementHeight = element.size.height;
     } else if (element.type === "text") {
@@ -257,16 +261,31 @@ export function Canvas({
                   </div>
                 </div>
               )}
-              {elements.map((element) => (
+              {elements
+                // Filter out elements that are children of groups (they're rendered by the group)
+                .filter(element => {
+                  const isChildOfGroup = elements.some(
+                    el => el.type === "group" && el.childIds.includes(element.id)
+                  );
+                  return !isChildOfGroup;
+                })
+                .map((element) => (
                 <CanvasElement
                   key={element.id}
                   element={element}
-                  isSelected={selectedId === element.id}
-                  onSelect={() => onSelect(element.id)}
+                  allElements={elements}
+                  isSelected={selectedIds.includes(element.id)}
+                  onSelect={(ctrlKey) => {
+                    if (ctrlKey) {
+                      onToggleSelect(element.id);
+                    } else {
+                      onSelect(element.id);
+                    }
+                  }}
                   onPositionChange={(pos) => handlePositionChangeWithGuides(element.id, pos)}
                   onRotationChange={(rotation) => onRotationChange(element.id, rotation)}
                   onSizeChange={
-                    element.type === "image"
+                    (element.type === "image" || element.type === "shape" || element.type === "group")
                       ? (w, h, pos) => onSizeChange(element.id, { width: w, height: h }, pos)
                       : undefined
                   }
