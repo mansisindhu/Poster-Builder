@@ -4,6 +4,7 @@ import React, { useState, useCallback, useEffect, useRef, useMemo } from "react"
 import { CanvasElement } from "./CanvasElement";
 import { CanvasElement as CanvasElementType, Position, CanvasSize } from "@/types/canvas";
 import { cn } from "@/lib/utils";
+import { SNAP_THRESHOLD } from "@/lib/constants";
 
 interface CanvasProps {
   elements: CanvasElementType[];
@@ -40,8 +41,6 @@ export const AlignmentGuidesContext = React.createContext<{
   guides: { showVerticalCenter: false, showHorizontalCenter: false },
   setGuides: () => {},
 });
-
-const SNAP_THRESHOLD = 10; // Pixels within which to snap and show guides
 
 export function Canvas({
   elements,

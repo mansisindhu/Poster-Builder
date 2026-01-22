@@ -3,13 +3,14 @@
 import React, { useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { 
-  Type, Image, Trash2, Download, RefreshCw, Undo2, Redo2, 
+  Type, Image as ImageIcon, Trash2, Download, RefreshCw, Undo2, Redo2, 
   Save, FolderOpen, FileImage, Settings2,
-  Square, Circle, Triangle, Minus, Pentagon, Hexagon, Shapes, ChevronDown,
+  Shapes, ChevronDown,
   Copy, Clipboard, Group, Ungroup
 } from "lucide-react";
 import { CanvasSize, ShapeType } from "@/types/canvas";
 import { cn } from "@/lib/utils";
+import { SHAPE_LABELS, SHAPE_ICONS } from "@/lib/constants";
 
 interface ToolbarProps {
   hasSelection: boolean;
@@ -36,25 +37,6 @@ interface ToolbarProps {
   onLoadProject: () => void;
   onCanvasSize: () => void;
 }
-
-// Shape icons mapping
-const shapeIcons: Record<ShapeType, React.ReactNode> = {
-  rectangle: <Square className="w-4 h-4" />,
-  circle: <Circle className="w-4 h-4" />,
-  ellipse: <Circle className="w-4 h-4 scale-x-125" />,
-  line: <Minus className="w-4 h-4" />,
-  triangle: <Triangle className="w-4 h-4" />,
-  polygon: <Pentagon className="w-4 h-4" />,
-};
-
-const shapeLabels: Record<ShapeType, string> = {
-  rectangle: "Rectangle",
-  circle: "Circle",
-  ellipse: "Ellipse",
-  line: "Line",
-  triangle: "Triangle",
-  polygon: "Polygon",
-};
 
 export function Toolbar({
   hasSelection,
@@ -170,7 +152,7 @@ export function Toolbar({
         </Button>
 
         <Button variant="outline" size="sm" onClick={handleImageClick} className="px-2 md:px-3">
-          <Image className="w-4 h-4 md:mr-2" />
+          <ImageIcon className="w-4 h-4 md:mr-2" />
           <span className="hidden md:inline">Image</span>
         </Button>
 
@@ -197,7 +179,7 @@ export function Toolbar({
               
               {/* Dropdown menu */}
               <div className="absolute top-full left-0 mt-1 bg-background border rounded-md shadow-lg z-50 min-w-[140px] py-1">
-                {(Object.keys(shapeLabels) as ShapeType[]).map((shapeType) => (
+                {(Object.keys(SHAPE_LABELS) as ShapeType[]).map((shapeType) => (
                   <button
                     key={shapeType}
                     className={cn(
@@ -206,8 +188,8 @@ export function Toolbar({
                     )}
                     onClick={() => handleAddShape(shapeType)}
                   >
-                    {shapeIcons[shapeType]}
-                    {shapeLabels[shapeType]}
+                    {SHAPE_ICONS[shapeType]}
+                    {SHAPE_LABELS[shapeType]}
                   </button>
                 ))}
               </div>

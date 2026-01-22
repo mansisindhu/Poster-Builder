@@ -1,460 +1,157 @@
 "use client";
 
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useMemo } from "react";
 import { 
-  CanvasElement, TextElement, ImageElement, ShapeElement, GroupElement, TextFormData, ShapeFormData,
-  Position, CanvasSettings, CanvasState, CanvasSize, ShapeType, Point, Size,
-  Project, DEFAULT_CANVAS_SIZE 
+  CanvasElement, GroupElement,
+  CanvasSettings, CanvasSize
 } from "@/types/canvas";
+import { getElementBounds as getElementBoundsUtil } from "./elementUtils";
+import { useCanvasHistory, pushToHistory } from "./useCanvasHistory";
+import { useProjectStorage } from "./useProjectStorage";
+import { useCanvasElements } from "./useCanvasElements";
 
+// ID counter for generating unique element IDs
 let elementIdCounter = 0;
 
 function generateId(): string {
   return `element-${++elementIdCounter}`;
 }
 
-function generateProjectId(): string {
-  return `project-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-}
-
-const defaultSettings: CanvasSettings = {
-  backgroundColor: "#ffffff",
-  canvasSize: DEFAULT_CANVAS_SIZE,
-};
-
-const MAX_HISTORY_SIZE = 50;
-const PROJECTS_STORAGE_KEY = "poster-builder-projects";
-
-interface HistoryState {
-  past: CanvasState[];
-  present: CanvasState;
-  future: CanvasState[];
-}
-
-const initialState: CanvasState = {
-  elements: [],
-  canvasSettings: defaultSettings,
-};
-
-const initialHistoryState: HistoryState = {
-  past: [],
-  present: initialState,
-  future: [],
-};
-
-// Deep clone helper
-function cloneState(state: CanvasState): CanvasState {
-  return {
-    elements: state.elements.map(el => ({ ...el })),
-    canvasSettings: { 
-      ...state.canvasSettings,
-      canvasSize: { ...state.canvasSettings.canvasSize }
-    },
-  };
-}
-
+/**
+ * Main canvas hook that combines all smaller hooks into a unified API
+ * 
+ * This is a thin layer that composes:
+ * - useCanvasHistory: Undo/redo and state management
+ * - useCanvasElements: Element CRUD and layer operations
+ * - useProjectStorage: Project save/load persistence
+ * 
+ * Plus selection, clipboard, grouping, and canvas settings.
+ */
 export function useCanvas() {
-  const [historyState, setHistoryState] = useState<HistoryState>(initialHistoryState);
+  // ============ History Management ============
+  const {
+    setHistoryState,
+    present,
+    canUndo,
+    canRedo,
+    saveInteractionSnapshot,
+    commitInteraction,
+    undo,
+    redo,
+    resetHistory,
+    loadState,
+  } = useCanvasHistory();
+
+  // ============ Selection State ============
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
-  const [currentProjectId, setCurrentProjectId] = useState<string | null>(null);
-  const [currentProjectName, setCurrentProjectName] = useState<string>("Untitled Project");
   const [hasClipboard, setHasClipboard] = useState(false);
-  
-  // Snapshot of state before an interaction begins
-  const interactionSnapshotRef = useRef<CanvasState | null>(null);
   
   // Clipboard for copy/paste functionality
   const clipboardRef = useRef<CanvasElement | null>(null);
 
-  // Derived state from history
-  const present = historyState.present ?? initialState;
-  const elements = present.elements ?? [];
-  const canvasSettings = present.canvasSettings ?? defaultSettings;
+  // Derived state from history (memoized for stable references)
+  const elements = useMemo(() => present.elements ?? [], [present.elements]);
+  const canvasSettings = present.canvasSettings;
   
   // For backwards compatibility, selectedId is the first selected element
   const selectedId = selectedIds.length > 0 ? selectedIds[0] : null;
   const selectedElement = elements.find((el) => el.id === selectedId) || null;
   const selectedElements = elements.filter((el) => selectedIds.includes(el.id));
 
-  // Check if undo/redo is available
-  const canUndo = historyState.past.length > 0;
-  const canRedo = historyState.future.length > 0;
+  // ============ Selection Operations ============
+  const clearSelection = useCallback(() => {
+    setSelectedIds([]);
+  }, []);
 
-  // Save a snapshot before starting an interaction
-  const saveInteractionSnapshot = useCallback(() => {
-    setHistoryState((prev) => {
-      interactionSnapshotRef.current = cloneState(prev.present);
-      return prev;
+  const selectElement = useCallback((id: string | null) => {
+    setSelectedIds(id ? [id] : []);
+  }, []);
+
+  const toggleElementSelection = useCallback((id: string) => {
+    setSelectedIds(prev => {
+      if (prev.includes(id)) {
+        return prev.filter(selectedId => selectedId !== id);
+      } else {
+        return [...prev, id];
+      }
     });
   }, []);
 
-  // Commit the interaction
-  const commitInteraction = useCallback(() => {
-    const snapshot = interactionSnapshotRef.current;
-    if (!snapshot) return;
-    
-    interactionSnapshotRef.current = null;
-    
-    setHistoryState((prev) => {
-      const currentStr = JSON.stringify(prev.present);
-      const snapshotStr = JSON.stringify(snapshot);
-      
-      if (currentStr === snapshotStr) {
-        return prev;
-      }
-      
-      const newPast = [...prev.past, snapshot];
-      if (newPast.length > MAX_HISTORY_SIZE) {
-        newPast.shift();
-      }
-      return {
-        past: newPast,
-        present: prev.present,
-        future: [],
-      };
-    });
+  const selectElements = useCallback((ids: string[]) => {
+    setSelectedIds(ids);
   }, []);
 
-  // Undo action
-  const undo = useCallback(() => {
-    setHistoryState((prev) => {
-      if (prev.past.length === 0) return prev;
-
-      const newPast = [...prev.past];
-      const previousState = newPast.pop();
-      
-      if (!previousState || !previousState.elements) {
-        return prev;
-      }
-
-      return {
-        past: newPast,
-        present: previousState,
-        future: [prev.present, ...prev.future],
-      };
-    });
+  // Callbacks for element operations
+  const handleElementCreated = useCallback((id: string) => {
+    setSelectedIds([id]);
   }, []);
 
-  // Redo action
-  const redo = useCallback(() => {
-    setHistoryState((prev) => {
-      if (prev.future.length === 0) return prev;
-
-      const newFuture = [...prev.future];
-      const nextState = newFuture.shift();
-      
-      if (!nextState || !nextState.elements) {
-        return prev;
-      }
-
-      return {
-        past: [...prev.past, prev.present],
-        present: nextState,
-        future: newFuture,
-      };
-    });
+  const handleElementDeleted = useCallback((id: string) => {
+    setSelectedIds(prev => prev.filter(selectedId => selectedId !== id));
   }, []);
 
-  // Update canvas settings (including size)
+  // ============ Element Operations (from useCanvasElements) ============
+  const {
+    addTextElement,
+    addImageElement,
+    addShapeElement,
+    updateElement,
+    updateElementPosition,
+    updateElementRotation,
+    updateElementSize,
+    updateElementWidth,
+    deleteElement,
+    deleteSelected,
+    clearCanvas,
+    moveElement,
+    bringToFront,
+    sendToBack,
+    moveLayerUp,
+    moveLayerDown,
+  } = useCanvasElements({
+    setHistoryState,
+    selectedIds,
+    onElementCreated: handleElementCreated,
+    onElementDeleted: handleElementDeleted,
+    onClearSelection: clearSelection,
+  });
+
+  // ============ Project Storage (from useProjectStorage) ============
+  const {
+    currentProjectId,
+    currentProjectName,
+    setCurrentProjectName,
+    saveProject,
+    loadProject,
+    getProjects,
+    deleteProject,
+    newProject,
+  } = useProjectStorage({
+    currentState: present,
+    onLoadState: loadState,
+    onResetState: resetHistory,
+    onClearSelection: clearSelection,
+  });
+
+  // ============ Canvas Settings ============
   const updateCanvasSettings = useCallback((updates: Partial<CanvasSettings>) => {
     setHistoryState((prev) => {
       const newSettings = { ...prev.present.canvasSettings, ...updates };
       const newPresent = { ...prev.present, canvasSettings: newSettings };
-      const newPast = [...prev.past, cloneState(prev.present)];
-      if (newPast.length > MAX_HISTORY_SIZE) {
-        newPast.shift();
-      }
-      return {
-        past: newPast,
-        present: newPresent,
-        future: [],
-      };
+      return pushToHistory(prev, newPresent);
     });
-  }, []);
+  }, [setHistoryState]);
 
-  // Change canvas size
   const setCanvasSize = useCallback((size: CanvasSize) => {
     updateCanvasSettings({ canvasSize: size });
   }, [updateCanvasSettings]);
 
-  const addTextElement = useCallback((data: TextFormData) => {
-    const id = generateId();
-    setHistoryState((prev) => {
-      const canvasSize = prev.present.canvasSettings.canvasSize;
-      const newElement: TextElement = {
-        id,
-        type: "text",
-        position: { 
-          x: Math.min(50 + Math.random() * 200, canvasSize.width - 100), 
-          y: Math.min(50 + Math.random() * 200, canvasSize.height - 50)
-        },
-        zIndex: prev.present.elements.length + 1,
-        rotation: 0,
-        content: data.content,
-        fontSize: data.fontSize,
-        fontFamily: data.fontFamily,
-        fontWeight: data.fontWeight,
-        fontStyle: data.fontStyle,
-        textAlign: data.textAlign,
-        color: data.color,
-        width: 200,
-      };
-      const newElements = [...prev.present.elements, newElement];
-      const newPresent = { ...prev.present, elements: newElements };
-      const newPast = [...prev.past, cloneState(prev.present)];
-      if (newPast.length > MAX_HISTORY_SIZE) {
-        newPast.shift();
-      }
-      return {
-        past: newPast,
-        present: newPresent,
-        future: [],
-      };
-    });
-    setSelectedIds([id]);
-  }, []);
-
-  const addImageElement = useCallback((src: string, name: string, width: number, height: number) => {
-    let w = width;
-    let h = height;
-    const maxSize = 300;
-
-    if (w > maxSize || h > maxSize) {
-      const ratio = Math.min(maxSize / w, maxSize / h);
-      w = w * ratio;
-      h = h * ratio;
-    }
-
-    const id = generateId();
-    setHistoryState((prev) => {
-      const canvasSize = prev.present.canvasSettings.canvasSize;
-      const newElement: ImageElement = {
-        id,
-        type: "image",
-        position: { 
-          x: Math.min(50 + Math.random() * 100, canvasSize.width - w), 
-          y: Math.min(50 + Math.random() * 100, canvasSize.height - h)
-        },
-        zIndex: prev.present.elements.length + 1,
-        rotation: 0,
-        src,
-        name: name.length > 20 ? name.substring(0, 17) + "..." : name,
-        size: { width: w, height: h },
-      };
-      const newElements = [...prev.present.elements, newElement];
-      const newPresent = { ...prev.present, elements: newElements };
-      const newPast = [...prev.past, cloneState(prev.present)];
-      if (newPast.length > MAX_HISTORY_SIZE) {
-        newPast.shift();
-      }
-      return {
-        past: newPast,
-        present: newPresent,
-        future: [],
-      };
-    });
-    setSelectedIds([id]);
-  }, []);
-
-  // Generate default points for shapes that need them
-  const getDefaultPointsForShape = useCallback((shapeType: ShapeType, width: number, height: number): Point[] => {
-    switch (shapeType) {
-      case "line":
-        return [
-          { x: 0, y: height / 2 },
-          { x: width, y: height / 2 }
-        ];
-      case "triangle":
-        return [
-          { x: width / 2, y: 0 },
-          { x: 0, y: height },
-          { x: width, y: height }
-        ];
-      case "polygon":
-        // Default to a pentagon
-        const sides = 5;
-        const centerX = width / 2;
-        const centerY = height / 2;
-        const radius = Math.min(width, height) / 2;
-        const points: Point[] = [];
-        for (let i = 0; i < sides; i++) {
-          const angle = (i * 2 * Math.PI) / sides - Math.PI / 2;
-          points.push({
-            x: centerX + radius * Math.cos(angle),
-            y: centerY + radius * Math.sin(angle)
-          });
-        }
-        return points;
-      default:
-        return [];
-    }
-  }, []);
-
-  const addShapeElement = useCallback((shapeType: ShapeType, data?: Partial<ShapeFormData>) => {
-    const id = generateId();
-    
-    // Set default dimensions based on shape type
-    let defaultWidth = 150;
-    let defaultHeight = 150;
-    
-    if (shapeType === "line") {
-      defaultWidth = 150;
-      defaultHeight = 4;
-    } else if (shapeType === "ellipse") {
-      // Ellipse should have different width/height to distinguish from circle
-      defaultWidth = 200;
-      defaultHeight = 120;
-    }
-    
-    setHistoryState((prev) => {
-      const canvasSize = prev.present.canvasSettings.canvasSize;
-      const newElement: ShapeElement = {
-        id,
-        type: "shape",
-        shapeType,
-        position: { 
-          x: Math.min(50 + Math.random() * 200, canvasSize.width - defaultWidth), 
-          y: Math.min(50 + Math.random() * 200, canvasSize.height - defaultHeight)
-        },
-        zIndex: prev.present.elements.length + 1,
-        rotation: 0,
-        size: { width: defaultWidth, height: defaultHeight },
-        fillColor: data?.fillColor ?? "#3b82f6",
-        strokeColor: data?.strokeColor ?? data?.fillColor ?? "#3b82f6",
-        strokeWidth: data?.strokeWidth ?? 2,
-        borderRadius: data?.borderRadius ?? 0,
-        points: getDefaultPointsForShape(shapeType, defaultWidth, defaultHeight),
-      };
-      const newElements = [...prev.present.elements, newElement];
-      const newPresent = { ...prev.present, elements: newElements };
-      const newPast = [...prev.past, cloneState(prev.present)];
-      if (newPast.length > MAX_HISTORY_SIZE) {
-        newPast.shift();
-      }
-      return {
-        past: newPast,
-        present: newPresent,
-        future: [],
-      };
-    });
-    setSelectedIds([id]);
-  }, [getDefaultPointsForShape]);
-
-  const updateElement = useCallback((id: string, updates: Partial<CanvasElement>) => {
-    setHistoryState((prev) => {
-      const newElements = prev.present.elements.map((el) => 
-        el.id === id ? { ...el, ...updates } as CanvasElement : el
-      );
-      const newPresent = { ...prev.present, elements: newElements };
-      const newPast = [...prev.past, cloneState(prev.present)];
-      if (newPast.length > MAX_HISTORY_SIZE) {
-        newPast.shift();
-      }
-      return {
-        past: newPast,
-        present: newPresent,
-        future: [],
-      };
-    });
-  }, []);
-
-  const updateElementPosition = useCallback((id: string, position: Position) => {
-    setHistoryState((prev) => {
-      const newElements = prev.present.elements.map((el) => 
-        el.id === id ? { ...el, position } : el
-      );
-      return {
-        ...prev,
-        present: { ...prev.present, elements: newElements },
-      };
-    });
-  }, []);
-
-  const updateElementRotation = useCallback((id: string, rotation: number) => {
-    setHistoryState((prev) => {
-      const newElements = prev.present.elements.map((el) => 
-        el.id === id ? { ...el, rotation } : el
-      );
-      return {
-        ...prev,
-        present: { ...prev.present, elements: newElements },
-      };
-    });
-  }, []);
-
-  const updateElementSize = useCallback((id: string, size: { width: number; height: number }, position?: Position) => {
-    setHistoryState((prev) => {
-      const newElements = prev.present.elements.map((el) => {
-        if (el.id === id && (el.type === "image" || el.type === "shape" || el.type === "group")) {
-          return position ? { ...el, size, position } : { ...el, size };
-        }
-        return el;
-      });
-      return {
-        ...prev,
-        present: { ...prev.present, elements: newElements },
-      };
-    });
-  }, []);
-
-  const updateElementWidth = useCallback((id: string, width: number) => {
-    setHistoryState((prev) => {
-      const newElements = prev.present.elements.map((el) => {
-        if (el.id === id && el.type === "text") {
-          return { ...el, width };
-        }
-        return el;
-      });
-      return {
-        ...prev,
-        present: { ...prev.present, elements: newElements },
-      };
-    });
-  }, []);
-
-  const deleteElement = useCallback((id: string) => {
-    setHistoryState((prev) => {
-      const newElements = prev.present.elements.filter((el) => el.id !== id);
-      const newPresent = { ...prev.present, elements: newElements };
-      const newPast = [...prev.past, cloneState(prev.present)];
-      if (newPast.length > MAX_HISTORY_SIZE) {
-        newPast.shift();
-      }
-      return {
-        past: newPast,
-        present: newPresent,
-        future: [],
-      };
-    });
-    setSelectedIds(prev => prev.filter(selectedId => selectedId !== id));
-  }, []);
-
-  const deleteSelected = useCallback(() => {
-    if (selectedIds.length === 0) return;
-    
-    setHistoryState((prev) => {
-      const newElements = prev.present.elements.filter((el) => !selectedIds.includes(el.id));
-      const newPresent = { ...prev.present, elements: newElements };
-      const newPast = [...prev.past, cloneState(prev.present)];
-      if (newPast.length > MAX_HISTORY_SIZE) {
-        newPast.shift();
-      }
-      return {
-        past: newPast,
-        present: newPresent,
-        future: [],
-      };
-    });
-    setSelectedIds([]);
-  }, [selectedIds]);
-
-  // Copy the currently selected element to clipboard
+  // ============ Clipboard Operations ============
   const copyElement = useCallback(() => {
     if (!selectedId) return false;
     
     const elementToCopy = elements.find(el => el.id === selectedId);
     if (elementToCopy) {
-      // Deep clone the element for the clipboard
       clipboardRef.current = JSON.parse(JSON.stringify(elementToCopy));
       setHasClipboard(true);
       return true;
@@ -462,20 +159,15 @@ export function useCanvas() {
     return false;
   }, [selectedId, elements]);
 
-  // Paste the copied element onto the canvas
   const pasteElement = useCallback(() => {
     const copiedElement = clipboardRef.current;
     if (!copiedElement) return null;
 
     const newId = generateId();
-    
-    // Offset the position slightly so the pasted element is visible
     const offset = 20;
     
     setHistoryState((prev) => {
       const canvasSize = prev.present.canvasSettings.canvasSize;
-      
-      // Create a new element based on the copied one
       const newElement: CanvasElement = {
         ...JSON.parse(JSON.stringify(copiedElement)),
         id: newId,
@@ -488,22 +180,13 @@ export function useCanvas() {
       
       const newElements = [...prev.present.elements, newElement];
       const newPresent = { ...prev.present, elements: newElements };
-      const newPast = [...prev.past, cloneState(prev.present)];
-      if (newPast.length > MAX_HISTORY_SIZE) {
-        newPast.shift();
-      }
-      return {
-        past: newPast,
-        present: newPresent,
-        future: [],
-      };
+      return pushToHistory(prev, newPresent);
     });
     
     setSelectedIds([newId]);
     return newId;
-  }, []);
+  }, [setHistoryState]);
 
-  // Duplicate the currently selected element (copy + paste in one action)
   const duplicateElement = useCallback(() => {
     if (copyElement()) {
       return pasteElement();
@@ -511,31 +194,11 @@ export function useCanvas() {
     return null;
   }, [copyElement, pasteElement]);
 
-  // Helper to get element bounds
+  // ============ Grouping Operations ============
   const getElementBounds = useCallback((element: CanvasElement): { x: number; y: number; width: number; height: number } => {
-    let width = 0;
-    let height = 0;
-    
-    if (element.type === "text") {
-      width = element.width;
-      height = element.fontSize * 1.5; // Approximate
-    } else if (element.type === "image" || element.type === "shape") {
-      width = element.size.width;
-      height = element.size.height;
-    } else if (element.type === "group") {
-      width = element.size.width;
-      height = element.size.height;
-    }
-    
-    return {
-      x: element.position.x,
-      y: element.position.y,
-      width,
-      height,
-    };
+    return getElementBoundsUtil(element);
   }, []);
 
-  // Group selected elements
   const groupElements = useCallback(() => {
     if (selectedIds.length < 2) return null;
     
@@ -545,9 +208,8 @@ export function useCanvas() {
       const elementsToGroup = prev.present.elements.filter(el => selectedIds.includes(el.id));
       if (elementsToGroup.length < 2) return prev;
       
-      // Calculate bounding box of all selected elements
+      // Calculate bounding box
       let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-      
       elementsToGroup.forEach(el => {
         const bounds = getElementBounds(el);
         minX = Math.min(minX, bounds.x);
@@ -556,24 +218,14 @@ export function useCanvas() {
         maxY = Math.max(maxY, bounds.y + bounds.height);
       });
       
-      const groupWidth = maxX - minX;
-      const groupHeight = maxY - minY;
-      
-      // Update child elements to have positions relative to group
+      // Update child positions to be relative to group
       const updatedElements = prev.present.elements.map(el => {
         if (selectedIds.includes(el.id)) {
-          return {
-            ...el,
-            position: {
-              x: el.position.x - minX,
-              y: el.position.y - minY,
-            },
-          };
+          return { ...el, position: { x: el.position.x - minX, y: el.position.y - minY } };
         }
         return el;
       });
       
-      // Create the group element
       const groupElement: GroupElement = {
         id: groupId,
         type: "group",
@@ -581,36 +233,22 @@ export function useCanvas() {
         zIndex: Math.max(...elementsToGroup.map(el => el.zIndex)) + 1,
         rotation: 0,
         childIds: selectedIds,
-        size: { width: groupWidth, height: groupHeight },
+        size: { width: maxX - minX, height: maxY - minY },
       };
       
-      // Add group element and keep child elements (but they won't be rendered directly)
       const newElements = [...updatedElements, groupElement];
-      
       const newPresent = { ...prev.present, elements: newElements };
-      const newPast = [...prev.past, cloneState(prev.present)];
-      if (newPast.length > MAX_HISTORY_SIZE) {
-        newPast.shift();
-      }
-      
-      return {
-        past: newPast,
-        present: newPresent,
-        future: [],
-      };
+      return pushToHistory(prev, newPresent);
     });
     
     setSelectedIds([groupId]);
     return groupId;
-  }, [selectedIds, getElementBounds]);
+  }, [selectedIds, getElementBounds, setHistoryState]);
 
-  // Ungroup a group element
   const ungroupElements = useCallback(() => {
     if (selectedIds.length !== 1) return false;
     
     const groupId = selectedIds[0];
-    
-    // First, check if it's a group and get child IDs
     const groupElement = elements.find(el => el.id === groupId);
     if (!groupElement || groupElement.type !== "group") return false;
     
@@ -619,18 +257,13 @@ export function useCanvas() {
     const groupRotation = groupElement.rotation;
     
     setHistoryState((prev) => {
-      // Update child elements to have absolute positions again
       const updatedElements = prev.present.elements
-        .filter(el => el.id !== groupId) // Remove the group element
+        .filter(el => el.id !== groupId)
         .map(el => {
           if (childIds.includes(el.id)) {
-            // Convert relative position back to absolute
             return {
               ...el,
-              position: {
-                x: el.position.x + groupPosition.x,
-                y: el.position.y + groupPosition.y,
-              },
+              position: { x: el.position.x + groupPosition.x, y: el.position.y + groupPosition.y },
               rotation: ((el.rotation || 0) + groupRotation) % 360,
             };
           }
@@ -638,282 +271,16 @@ export function useCanvas() {
         });
       
       const newPresent = { ...prev.present, elements: updatedElements };
-      const newPast = [...prev.past, cloneState(prev.present)];
-      if (newPast.length > MAX_HISTORY_SIZE) {
-        newPast.shift();
-      }
-      
-      return {
-        past: newPast,
-        present: newPresent,
-        future: [],
-      };
+      return pushToHistory(prev, newPresent);
     });
     
     setSelectedIds(childIds);
     return true;
-  }, [selectedIds, elements]);
+  }, [selectedIds, elements, setHistoryState]);
 
-  // Select a single element (replaces current selection)
-  const selectElement = useCallback((id: string | null) => {
-    setSelectedIds(id ? [id] : []);
-  }, []);
-
-  // Add an element to the current selection (for Ctrl+Click)
-  const toggleElementSelection = useCallback((id: string) => {
-    setSelectedIds(prev => {
-      if (prev.includes(id)) {
-        return prev.filter(selectedId => selectedId !== id);
-      } else {
-        return [...prev, id];
-      }
-    });
-  }, []);
-
-  // Select multiple elements
-  const selectElements = useCallback((ids: string[]) => {
-    setSelectedIds(ids);
-  }, []);
-
-  const clearCanvas = useCallback(() => {
-    setHistoryState((prev) => {
-      const newPresent = { ...prev.present, elements: [] };
-      const newPast = [...prev.past, cloneState(prev.present)];
-      if (newPast.length > MAX_HISTORY_SIZE) {
-        newPast.shift();
-      }
-      return {
-        past: newPast,
-        present: newPresent,
-        future: [],
-      };
-    });
-    setSelectedIds([]);
-  }, []);
-
-  const newProject = useCallback(() => {
-    setHistoryState(initialHistoryState);
-    setSelectedIds([]);
-    setCurrentProjectId(null);
-    setCurrentProjectName("Untitled Project");
-  }, []);
-
-  const moveElement = useCallback((id: string, dx: number, dy: number) => {
-    setHistoryState((prev) => {
-      const newElements = prev.present.elements.map((el) => {
-        if (el.id !== id) return el;
-        return {
-          ...el,
-          position: {
-            x: el.position.x + dx,
-            y: el.position.y + dy,
-          },
-        };
-      });
-      const newPresent = { ...prev.present, elements: newElements };
-      const newPast = [...prev.past, cloneState(prev.present)];
-      if (newPast.length > MAX_HISTORY_SIZE) {
-        newPast.shift();
-      }
-      return {
-        past: newPast,
-        present: newPresent,
-        future: [],
-      };
-    });
-  }, []);
-
-  const recalculateZIndices = useCallback((els: CanvasElement[]): CanvasElement[] => {
-    return els.map((el, index) => ({ ...el, zIndex: index + 1 }));
-  }, []);
-
-  const bringToFront = useCallback((id: string) => {
-    setHistoryState((prev) => {
-      const elements = prev.present.elements;
-      const index = elements.findIndex((el) => el.id === id);
-      if (index === -1 || index === elements.length - 1) return prev;
-      
-      const newElements = [...elements];
-      const [element] = newElements.splice(index, 1);
-      newElements.push(element);
-      const reindexed = recalculateZIndices(newElements);
-      
-      const newPresent = { ...prev.present, elements: reindexed };
-      const newPast = [...prev.past, cloneState(prev.present)];
-      if (newPast.length > MAX_HISTORY_SIZE) {
-        newPast.shift();
-      }
-      return {
-        past: newPast,
-        present: newPresent,
-        future: [],
-      };
-    });
-  }, [recalculateZIndices]);
-
-  const sendToBack = useCallback((id: string) => {
-    setHistoryState((prev) => {
-      const elements = prev.present.elements;
-      const index = elements.findIndex((el) => el.id === id);
-      if (index === -1 || index === 0) return prev;
-      
-      const newElements = [...elements];
-      const [element] = newElements.splice(index, 1);
-      newElements.unshift(element);
-      const reindexed = recalculateZIndices(newElements);
-      
-      const newPresent = { ...prev.present, elements: reindexed };
-      const newPast = [...prev.past, cloneState(prev.present)];
-      if (newPast.length > MAX_HISTORY_SIZE) {
-        newPast.shift();
-      }
-      return {
-        past: newPast,
-        present: newPresent,
-        future: [],
-      };
-    });
-  }, [recalculateZIndices]);
-
-  const moveLayerUp = useCallback((id: string) => {
-    setHistoryState((prev) => {
-      const elements = prev.present.elements;
-      const index = elements.findIndex((el) => el.id === id);
-      if (index === -1 || index === elements.length - 1) return prev;
-      
-      const newElements = [...elements];
-      [newElements[index], newElements[index + 1]] = [newElements[index + 1], newElements[index]];
-      const reindexed = recalculateZIndices(newElements);
-      
-      const newPresent = { ...prev.present, elements: reindexed };
-      const newPast = [...prev.past, cloneState(prev.present)];
-      if (newPast.length > MAX_HISTORY_SIZE) {
-        newPast.shift();
-      }
-      return {
-        past: newPast,
-        present: newPresent,
-        future: [],
-      };
-    });
-  }, [recalculateZIndices]);
-
-  const moveLayerDown = useCallback((id: string) => {
-    setHistoryState((prev) => {
-      const elements = prev.present.elements;
-      const index = elements.findIndex((el) => el.id === id);
-      if (index === -1 || index === 0) return prev;
-      
-      const newElements = [...elements];
-      [newElements[index], newElements[index - 1]] = [newElements[index - 1], newElements[index]];
-      const reindexed = recalculateZIndices(newElements);
-      
-      const newPresent = { ...prev.present, elements: reindexed };
-      const newPast = [...prev.past, cloneState(prev.present)];
-      if (newPast.length > MAX_HISTORY_SIZE) {
-        newPast.shift();
-      }
-      return {
-        past: newPast,
-        present: newPresent,
-        future: [],
-      };
-    });
-  }, [recalculateZIndices]);
-
-  // Save project to localStorage
-  const saveProject = useCallback((name?: string) => {
-    const projectName = name || currentProjectName;
-    const projectId = currentProjectId || generateProjectId();
-    
-    const project: Project = {
-      id: projectId,
-      name: projectName,
-      state: cloneState(historyState.present),
-      createdAt: currentProjectId ? Date.now() : Date.now(),
-      updatedAt: Date.now(),
-    };
-
-    try {
-      const existingProjects = JSON.parse(localStorage.getItem(PROJECTS_STORAGE_KEY) || "[]") as Project[];
-      const existingIndex = existingProjects.findIndex(p => p.id === projectId);
-      
-      if (existingIndex >= 0) {
-        existingProjects[existingIndex] = project;
-      } else {
-        existingProjects.unshift(project);
-      }
-      
-      localStorage.setItem(PROJECTS_STORAGE_KEY, JSON.stringify(existingProjects));
-      setCurrentProjectId(projectId);
-      setCurrentProjectName(projectName);
-      return true;
-    } catch (error) {
-      console.error("Failed to save project:", error);
-      return false;
-    }
-  }, [historyState.present, currentProjectId, currentProjectName]);
-
-  // Load project from localStorage
-  const loadProject = useCallback((projectId: string) => {
-    try {
-      const projects = JSON.parse(localStorage.getItem(PROJECTS_STORAGE_KEY) || "[]") as Project[];
-      const project = projects.find(p => p.id === projectId);
-      
-      if (project) {
-        // Ensure the state has the correct structure
-        const loadedState: CanvasState = {
-          elements: project.state.elements || [],
-          canvasSettings: {
-            backgroundColor: project.state.canvasSettings?.backgroundColor || "#ffffff",
-            canvasSize: project.state.canvasSettings?.canvasSize || DEFAULT_CANVAS_SIZE,
-          },
-        };
-        
-        setHistoryState({
-          past: [],
-          present: loadedState,
-          future: [],
-        });
-        setSelectedIds([]);
-        setCurrentProjectId(project.id);
-        setCurrentProjectName(project.name);
-        return true;
-      }
-      return false;
-    } catch (error) {
-      console.error("Failed to load project:", error);
-      return false;
-    }
-  }, []);
-
-  // Get all saved projects
-  const getProjects = useCallback((): Project[] => {
-    try {
-      return JSON.parse(localStorage.getItem(PROJECTS_STORAGE_KEY) || "[]") as Project[];
-    } catch {
-      return [];
-    }
-  }, []);
-
-  // Delete a project
-  const deleteProject = useCallback((projectId: string) => {
-    try {
-      const projects = JSON.parse(localStorage.getItem(PROJECTS_STORAGE_KEY) || "[]") as Project[];
-      const filtered = projects.filter(p => p.id !== projectId);
-      localStorage.setItem(PROJECTS_STORAGE_KEY, JSON.stringify(filtered));
-      
-      if (currentProjectId === projectId) {
-        setCurrentProjectId(null);
-        setCurrentProjectName("Untitled Project");
-      }
-      return true;
-    } catch {
-      return false;
-    }
-  }, [currentProjectId]);
-
+  // ============ Return API ============
   return {
+    // State
     elements,
     selectedElement,
     selectedElements,
@@ -924,10 +291,19 @@ export function useCanvas() {
     canRedo,
     currentProjectId,
     currentProjectName,
+    hasClipboard,
+    
+    // History
     undo,
     redo,
+    saveInteractionSnapshot,
+    commitInteraction,
+    
+    // Canvas settings
     updateCanvasSettings,
     setCanvasSize,
+    
+    // Element operations
     addTextElement,
     addImageElement,
     addShapeElement,
@@ -936,27 +312,34 @@ export function useCanvas() {
     updateElementRotation,
     updateElementSize,
     updateElementWidth,
-    saveInteractionSnapshot,
-    commitInteraction,
     deleteElement,
     deleteSelected,
-    copyElement,
-    pasteElement,
-    duplicateElement,
-    hasClipboard,
-    selectElement,
-    selectElements,
-    toggleElementSelection,
-    groupElements,
-    ungroupElements,
-    getElementBounds,
     clearCanvas,
-    newProject,
     moveElement,
+    
+    // Layer ordering
     bringToFront,
     sendToBack,
     moveLayerUp,
     moveLayerDown,
+    
+    // Selection
+    selectElement,
+    selectElements,
+    toggleElementSelection,
+    
+    // Clipboard
+    copyElement,
+    pasteElement,
+    duplicateElement,
+    
+    // Grouping
+    groupElements,
+    ungroupElements,
+    getElementBounds,
+    
+    // Project management
+    newProject,
     saveProject,
     loadProject,
     getProjects,

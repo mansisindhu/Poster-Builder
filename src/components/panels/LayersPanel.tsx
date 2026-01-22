@@ -1,10 +1,11 @@
 "use client";
 
 import React from "react";
-import { CanvasElement, ShapeType } from "@/types/canvas";
+import { CanvasElement } from "@/types/canvas";
 import { cn } from "@/lib/utils";
-import { Type, Image, ChevronUp, ChevronDown, ChevronsUp, ChevronsDown, RotateCw, Square, Circle, Triangle, Minus, Pentagon, Group } from "lucide-react";
+import { Type, ChevronUp, ChevronDown, ChevronsUp, ChevronsDown, RotateCw, Group } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { getShapeIcon, getElementDisplayName } from "@/lib/elementUtils";
 
 interface LayersPanelProps {
   elements: CanvasElement[];
@@ -14,51 +15,6 @@ interface LayersPanelProps {
   onSendToBack: (id: string) => void;
   onMoveUp: (id: string) => void;
   onMoveDown: (id: string) => void;
-}
-
-// Get shape icon based on shape type
-function getShapeIcon(shapeType: ShapeType) {
-  switch (shapeType) {
-    case "rectangle":
-      return <Square className="w-4 h-4 text-muted-foreground" />;
-    case "circle":
-      return <Circle className="w-4 h-4 text-muted-foreground" />;
-    case "ellipse":
-      return <Circle className="w-4 h-4 text-muted-foreground scale-x-125" />;
-    case "line":
-      return <Minus className="w-4 h-4 text-muted-foreground" />;
-    case "triangle":
-      return <Triangle className="w-4 h-4 text-muted-foreground" />;
-    case "polygon":
-      return <Pentagon className="w-4 h-4 text-muted-foreground" />;
-    default:
-      return <Square className="w-4 h-4 text-muted-foreground" />;
-  }
-}
-
-// Get display name for element
-function getElementDisplayName(element: CanvasElement, allElements: CanvasElement[]): string {
-  switch (element.type) {
-    case "text":
-      const text = element.content.substring(0, 20);
-      return text + (element.content.length > 20 ? "..." : "");
-    case "image":
-      return element.name;
-    case "shape":
-      const shapeLabels: Record<ShapeType, string> = {
-        rectangle: "Rectangle",
-        circle: "Circle",
-        ellipse: "Ellipse",
-        line: "Line",
-        triangle: "Triangle",
-        polygon: "Polygon",
-      };
-      return shapeLabels[element.shapeType] || "Shape";
-    case "group":
-      return `Group (${element.childIds.length} items)`;
-    default:
-      return "Element";
-  }
 }
 
 export function LayersPanel({ 
@@ -168,7 +124,7 @@ export function LayersPanel({
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="text-sm font-medium truncate">
-                    {getElementDisplayName(element, elements)}
+                    {getElementDisplayName(element)}
                   </div>
                   <div className="text-xs text-muted-foreground capitalize flex items-center gap-1">
                     {element.type === "shape" ? element.shapeType : element.type}

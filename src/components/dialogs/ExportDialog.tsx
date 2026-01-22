@@ -11,7 +11,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { CanvasSize } from "@/types/canvas";
-import { Download, Image } from "lucide-react";
+import { Download, Image as ImageIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface ExportDialogProps {
@@ -85,7 +85,7 @@ export function ExportDialog({
 
           <div className="bg-muted/50 rounded-lg p-4 space-y-2">
             <div className="flex items-center gap-2 text-sm">
-              <Image className="w-4 h-4 text-muted-foreground" />
+              <ImageIcon className="w-4 h-4 text-muted-foreground" />
               <span className="font-medium">Export Details</span>
             </div>
             <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
