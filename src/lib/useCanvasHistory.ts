@@ -6,8 +6,13 @@ import { MAX_HISTORY_SIZE } from "./constants";
 
 // Default canvas settings
 const defaultSettings: CanvasSettings = {
+  backgroundType: "solid",
   backgroundColor: "#ffffff",
   canvasSize: DEFAULT_CANVAS_SIZE,
+  grid: {
+    enabled: false,
+    size: 20,
+  },
 };
 
 // Initial canvas state

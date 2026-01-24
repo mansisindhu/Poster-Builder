@@ -1,12 +1,13 @@
 "use client";
 
 import React, { useRef, useState } from "react";
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
-import { 
-  Type, Image as ImageIcon, Trash2, Download, RefreshCw, Undo2, Redo2, 
+import {
+  Type, Image as ImageIcon, Trash2, Download, RefreshCw, Undo2, Redo2,
   Save, FolderOpen, FileImage, Settings2,
   Shapes, ChevronDown,
-  Copy, Clipboard, Group, Ungroup
+  Copy, Clipboard, Group, Ungroup, HelpCircle
 } from "lucide-react";
 import { CanvasSize, ShapeType } from "@/types/canvas";
 import { cn } from "@/lib/utils";
@@ -281,10 +282,21 @@ export function Toolbar({
           <span className="hidden md:inline">{currentSize.width}×{currentSize.height}</span>
         </Button>
 
-        <Button 
-          variant="ghost" 
-          size="sm" 
-          onClick={onClearCanvas} 
+        <Link href="/guide">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="px-2"
+            title="Help & Guide"
+          >
+            <HelpCircle className="w-4 h-4" />
+          </Button>
+        </Link>
+
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={onClearCanvas}
           className="px-2"
           title="Clear Canvas"
         >

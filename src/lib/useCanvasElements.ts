@@ -102,13 +102,22 @@ export function useCanvasElements({
       const newElement: TextElement = {
         id,
         type: "text",
-        position: { 
-          x: Math.min(50 + Math.random() * 200, canvasSize.width - 100), 
+        position: {
+          x: Math.min(50 + Math.random() * 200, canvasSize.width - 100),
           y: Math.min(50 + Math.random() * 200, canvasSize.height - 50)
         },
         zIndex: prev.present.elements.length + 1,
         rotation: 0,
+        opacity: 1,
+        locked: false,
+        scaleX: 1,
+        scaleY: 1,
         content: data.content,
+        shadowEnabled: false,
+        shadowColor: "#000000",
+        shadowBlur: 2,
+        shadowOffsetX: 1,
+        shadowOffsetY: 1,
         fontSize: data.fontSize,
         fontFamily: data.fontFamily,
         fontWeight: data.fontWeight,
@@ -144,13 +153,21 @@ export function useCanvasElements({
       const newElement: ImageElement = {
         id,
         type: "image",
-        position: { 
-          x: Math.min(50 + Math.random() * 100, canvasSize.width - w), 
+        position: {
+          x: Math.min(50 + Math.random() * 100, canvasSize.width - w),
           y: Math.min(50 + Math.random() * 100, canvasSize.height - h)
         },
         zIndex: prev.present.elements.length + 1,
         rotation: 0,
+        opacity: 1,
+        locked: false,
+        scaleX: 1,
+        scaleY: 1,
         src,
+        grayscale: 0,
+        brightness: 100,
+        contrast: 100,
+        blur: 0,
         name: name.length > 20 ? name.substring(0, 17) + "..." : name,
         size: { width: w, height: h },
       };
@@ -185,12 +202,16 @@ export function useCanvasElements({
         id,
         type: "shape",
         shapeType,
-        position: { 
-          x: Math.min(50 + Math.random() * 200, canvasSize.width - defaultWidth), 
+        position: {
+          x: Math.min(50 + Math.random() * 200, canvasSize.width - defaultWidth),
           y: Math.min(50 + Math.random() * 200, canvasSize.height - defaultHeight)
         },
         zIndex: prev.present.elements.length + 1,
         rotation: 0,
+        opacity: 1,
+        locked: false,
+        scaleX: 1,
+        scaleY: 1,
         size: { width: defaultWidth, height: defaultHeight },
         fillColor: data?.fillColor ?? "#3b82f6",
         strokeColor: data?.strokeColor ?? data?.fillColor ?? "#3b82f6",

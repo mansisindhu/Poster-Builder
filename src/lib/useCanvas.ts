@@ -201,14 +201,19 @@ export function useCanvas() {
 
   const groupElements = useCallback(() => {
     if (selectedIds.length < 2) return null;
-    
+
     const groupId = generateId();
-    
+
     setHistoryState((prev) => {
       const elementsToGroup = prev.present.elements.filter(el => selectedIds.includes(el.id));
       if (elementsToGroup.length < 2) return prev;
+
+      // Check if any selected elements are locked or are groups - don't allow grouping
+      if (elementsToGroup.some(el => el.locked || el.type === "group")) {
+        return prev; // Don't group if any element is locked or is a group
+      }
       
-      // Calculate bounding box
+      // Calculate bounding box of all elements to be grouped
       let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
       elementsToGroup.forEach(el => {
         const bounds = getElementBounds(el);
@@ -217,6 +222,11 @@ export function useCanvas() {
         maxX = Math.max(maxX, bounds.x + bounds.width);
         maxY = Math.max(maxY, bounds.y + bounds.height);
       });
+
+      // Ensure we have valid bounds
+      if (minX === Infinity || minY === Infinity) {
+        return prev; // No valid elements to group
+      }
       
       // Update child positions to be relative to group
       const updatedElements = prev.present.elements.map(el => {
@@ -232,6 +242,10 @@ export function useCanvas() {
         position: { x: minX, y: minY },
         zIndex: Math.max(...elementsToGroup.map(el => el.zIndex)) + 1,
         rotation: 0,
+        opacity: 1,
+        locked: false,
+        scaleX: 1,
+        scaleY: 1,
         childIds: selectedIds,
         size: { width: maxX - minX, height: maxY - minY },
       };

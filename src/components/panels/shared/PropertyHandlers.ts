@@ -7,6 +7,18 @@ export interface PropertyHandlers {
   handlePositionChange: (axis: "x" | "y", value: string) => void;
   handleRotationChange: (value: string) => void;
   handleResetRotation: () => void;
+  handleOpacityChange: (value: string) => void;
+  toggleLock: () => void;
+  flipHorizontal: () => void;
+  flipVertical: () => void;
+  toggleTextShadow: () => void;
+  handleTextShadowColorChange: (value: string) => void;
+  handleTextShadowBlurChange: (value: string) => void;
+  handleTextShadowOffsetChange: (axis: "x" | "y", value: string) => void;
+  handleImageGrayscaleChange: (value: string) => void;
+  handleImageBrightnessChange: (value: string) => void;
+  handleImageContrastChange: (value: string) => void;
+  handleImageBlurChange: (value: string) => void;
   handleSizeChange: (dimension: "width" | "height", value: string) => void;
   handleFontSizeChange: (value: string) => void;
   handleTextColorChange: (value: string) => void;
@@ -44,6 +56,74 @@ export function createPropertyHandlers(
     let numValue = parseFloat(value) || 0;
     numValue = ((numValue % 360) + 360) % 360;
     onUpdate(element.id, { rotation: numValue });
+  };
+
+  const handleOpacityChange = (value: string) => {
+    if (!element) return;
+    let numValue = parseFloat(value) || 0;
+    numValue = Math.max(0, Math.min(1, numValue));
+    onUpdate(element.id, { opacity: numValue });
+  };
+
+  const toggleLock = () => {
+    if (!element) return;
+    onUpdate(element.id, { locked: !element.locked });
+  };
+
+  const flipHorizontal = () => {
+    if (!element) return;
+    onUpdate(element.id, { scaleX: element.scaleX * -1 });
+  };
+
+  const flipVertical = () => {
+    if (!element) return;
+    onUpdate(element.id, { scaleY: element.scaleY * -1 });
+  };
+
+  const toggleTextShadow = () => {
+    if (!isTextElement(element)) return;
+    onUpdate(element.id, { shadowEnabled: !element.shadowEnabled });
+  };
+
+  const handleTextShadowColorChange = (value: string) => {
+    if (!isTextElement(element)) return;
+    onUpdate(element.id, { shadowColor: value });
+  };
+
+  const handleTextShadowBlurChange = (value: string) => {
+    if (!isTextElement(element)) return;
+    const numValue = Math.max(0, Math.min(20, parseInt(value) || 0));
+    onUpdate(element.id, { shadowBlur: numValue });
+  };
+
+  const handleTextShadowOffsetChange = (axis: "x" | "y", value: string) => {
+    if (!isTextElement(element)) return;
+    const numValue = Math.max(-20, Math.min(20, parseInt(value) || 0));
+    onUpdate(element.id, { [`shadowOffset${axis.toUpperCase()}`]: numValue });
+  };
+
+  const handleImageGrayscaleChange = (value: string) => {
+    if (!element || element.type !== "image") return;
+    const numValue = Math.max(0, Math.min(100, parseInt(value) || 0));
+    onUpdate(element.id, { grayscale: numValue });
+  };
+
+  const handleImageBrightnessChange = (value: string) => {
+    if (!element || element.type !== "image") return;
+    const numValue = Math.max(50, Math.min(150, parseInt(value) || 100));
+    onUpdate(element.id, { brightness: numValue });
+  };
+
+  const handleImageContrastChange = (value: string) => {
+    if (!element || element.type !== "image") return;
+    const numValue = Math.max(50, Math.min(150, parseInt(value) || 100));
+    onUpdate(element.id, { contrast: numValue });
+  };
+
+  const handleImageBlurChange = (value: string) => {
+    if (!element || element.type !== "image") return;
+    const numValue = Math.max(0, Math.min(10, parseFloat(value) || 0));
+    onUpdate(element.id, { blur: numValue });
   };
 
   const handleResetRotation = () => {
@@ -142,6 +222,18 @@ export function createPropertyHandlers(
     handlePositionChange,
     handleRotationChange,
     handleResetRotation,
+    handleOpacityChange,
+    toggleLock,
+    flipHorizontal,
+    flipVertical,
+    toggleTextShadow,
+    handleTextShadowColorChange,
+    handleTextShadowBlurChange,
+    handleTextShadowOffsetChange,
+    handleImageGrayscaleChange,
+    handleImageBrightnessChange,
+    handleImageContrastChange,
+    handleImageBlurChange,
     handleSizeChange,
     handleFontSizeChange,
     handleTextColorChange,

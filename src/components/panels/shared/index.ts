@@ -2,6 +2,12 @@ export { createPropertyHandlers, type PropertyHandlers, type UpdateFn } from "./
 export { ColorPicker } from "./ColorPicker";
 export { PositionEditor } from "./PositionEditor";
 export { RotationEditor } from "./RotationEditor";
+export { OpacityEditor } from "./OpacityEditor";
+export { LockButton } from "./LockButton";
+export { FlipControls } from "./FlipControls";
+export { CanvasSettingsEditor } from "./CanvasSettingsEditor";
+export { TextShadowEditor } from "./TextShadowEditor";
+export { ImageFiltersEditor } from "./ImageFiltersEditor";
 export { SizeEditor } from "./SizeEditor";
 export { TextStyleEditor } from "./TextStyleEditor";
 export { ShapeStyleEditor } from "./ShapeStyleEditor";

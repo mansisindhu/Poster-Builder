@@ -138,7 +138,10 @@ export function MobilePanel({
             <ColorPicker
               label="Background"
               value={canvasSettings.backgroundColor}
-              onChange={(value) => onUpdateCanvasSettings({ backgroundColor: value })}
+              onChange={(value) => onUpdateCanvasSettings({
+                backgroundType: "solid",
+                backgroundColor: value
+              })}
               compact
             />
 

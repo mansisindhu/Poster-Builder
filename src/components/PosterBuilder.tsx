@@ -9,6 +9,7 @@ import { Canvas } from "./canvas/Canvas";
 import { PropertiesPanel } from "./panels/PropertiesPanel";
 import { LayersPanel } from "./panels/LayersPanel";
 import { MobilePanel } from "./panels/MobilePanel";
+import { ResizablePanel } from "./ui/ResizablePanel";
 import { useDialogManager, DialogRenderer } from "./dialogs/DialogManager";
 import { CanvasElement, ShapeType } from "@/types/canvas";
 
@@ -131,23 +132,24 @@ export function PosterBuilder() {
 
       {/* Desktop Layout */}
       <div className="flex-1 hidden md:flex overflow-hidden">
-        <PropertiesPanel
-          element={selectedElement}
-          selectedCount={selectedIds.length}
-          canvasSettings={canvasSettings}
-          onUpdate={canvas.updateElement}
-          onUpdateCanvasSettings={canvas.updateCanvasSettings}
-          onEditText={dialogs.openTextDialog}
-          onGroup={canvas.groupElements}
-          onUngroup={canvas.ungroupElements}
-        />
+        <ResizablePanel defaultWidth={280} minWidth={240} maxWidth={500}>
+          <PropertiesPanel
+            element={selectedElement}
+            selectedCount={selectedIds.length}
+            canvasSettings={canvasSettings}
+            onUpdate={canvas.updateElement}
+            onUpdateCanvasSettings={canvas.updateCanvasSettings}
+            onEditText={dialogs.openTextDialog}
+            onGroup={canvas.groupElements}
+            onUngroup={canvas.ungroupElements}
+          />
+        </ResizablePanel>
 
         <Canvas
           elements={elements}
           selectedId={selectedId}
           selectedIds={selectedIds}
-          backgroundColor={canvasSettings.backgroundColor}
-          canvasSize={canvasSettings.canvasSize}
+          canvasSettings={canvasSettings}
           onSelect={canvas.selectElement}
           onToggleSelect={canvas.toggleElementSelection}
           onPositionChange={canvas.updateElementPosition}
@@ -168,6 +170,7 @@ export function PosterBuilder() {
           onSendToBack={canvas.sendToBack}
           onMoveUp={canvas.moveLayerUp}
           onMoveDown={canvas.moveLayerDown}
+          onToggleLock={(id) => canvas.updateElement(id, { locked: !elements.find(el => el.id === id)?.locked })}
         />
       </div>
 
@@ -177,8 +180,7 @@ export function PosterBuilder() {
           elements={elements}
           selectedId={selectedId}
           selectedIds={selectedIds}
-          backgroundColor={canvasSettings.backgroundColor}
-          canvasSize={canvasSettings.canvasSize}
+          canvasSettings={canvasSettings}
           onSelect={canvas.selectElement}
           onToggleSelect={canvas.toggleElementSelection}
           onPositionChange={canvas.updateElementPosition}

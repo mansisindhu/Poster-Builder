@@ -266,7 +266,13 @@ export function CanvasElement({
   const handlePointerDown = useCallback(
     (e: React.MouseEvent | React.TouchEvent) => {
       e.stopPropagation();
-      
+
+      // If element is locked, only allow selection
+      if (element.locked) {
+        onSelect('ctrlKey' in e ? (e.ctrlKey || e.metaKey) : false);
+        return;
+      }
+
       // Check for Ctrl/Cmd key for multi-selection
       const ctrlKey = 'ctrlKey' in e ? (e.ctrlKey || e.metaKey) : false;
       onSelect(ctrlKey);
@@ -472,15 +478,18 @@ export function CanvasElement({
     <div
       ref={elementRef}
       className={cn(
-        "absolute cursor-move select-none touch-none",
-        isSelected && "ring-2 ring-primary ring-offset-2"
+        "absolute select-none touch-none",
+        element.locked ? "cursor-not-allowed" : "cursor-move",
+        isSelected && element.locked && "ring-2 ring-orange-400 ring-offset-2",
+        isSelected && !element.locked && "ring-2 ring-primary ring-offset-2"
       )}
       style={{
         left: element.position.x,
         top: element.position.y,
         zIndex: element.zIndex,
-        transform: `rotate(${element.rotation}deg)`,
+        transform: `rotate(${element.rotation}deg) scaleX(${element.scaleX}) scaleY(${element.scaleY})`,
         transformOrigin: "center center",
+        opacity: element.opacity,
       }}
       onMouseDown={handleMouseDown}
       onTouchStart={handleTouchStart}
@@ -500,6 +509,9 @@ export function CanvasElement({
             minWidth: 50,
             wordWrap: "break-word",
             overflowWrap: "break-word",
+            textShadow: element.shadowEnabled
+              ? `${element.shadowOffsetX}px ${element.shadowOffsetY}px ${element.shadowBlur}px ${element.shadowColor}`
+              : "none",
           }}
         >
           {element.content}
@@ -550,6 +562,9 @@ export function CanvasElement({
                       color: childElement.color,
                       width: childElement.width,
                       minWidth: 50,
+                      textShadow: childElement.shadowEnabled
+                        ? `${childElement.shadowOffsetX}px ${childElement.shadowOffsetY}px ${childElement.shadowBlur}px ${childElement.shadowColor}`
+                        : "none",
                     }}
                   >
                     {childElement.content}
@@ -565,6 +580,9 @@ export function CanvasElement({
                       src={childElement.src}
                       alt={childElement.name}
                       className="max-w-full max-h-full object-contain"
+                      style={{
+                        filter: `grayscale(${childElement.grayscale}%) brightness(${childElement.brightness}%) contrast(${childElement.contrast}%) blur(${childElement.blur}px)`,
+                      }}
                       draggable={false}
                     />
                   </div>
@@ -590,13 +608,16 @@ export function CanvasElement({
             src={element.src}
             alt={element.name}
             className="max-w-full max-h-full object-contain pointer-events-none"
+            style={{
+              filter: `grayscale(${element.grayscale}%) brightness(${element.brightness}%) contrast(${element.contrast}%) blur(${element.blur}px)`,
+            }}
             draggable={false}
           />
         </div>
       ) : null}
 
       {/* Resize handles for images, shapes, and groups */}
-      {isSelected && (element.type === "image" || element.type === "shape" || element.type === "group") && (
+      {isSelected && !element.locked && (element.type === "image" || element.type === "shape" || element.type === "group") && (
         <>
           {resizeHandles.map((handle) => (
             <div
@@ -615,7 +636,7 @@ export function CanvasElement({
       )}
 
       {/* Width resize handle for text elements */}
-      {isSelected && element.type === "text" && (
+      {isSelected && !element.locked && element.type === "text" && (
         <div
           data-text-width-handle="true"
           className="absolute top-1/2 -right-3 -translate-y-1/2 w-5 h-8 md:w-4 md:h-6 bg-primary border-2 border-white rounded z-10 touch-none cursor-ew-resize flex items-center justify-center"
@@ -625,7 +646,7 @@ export function CanvasElement({
       )}
 
       {/* Rotation handle */}
-      {isSelected && (
+      {isSelected && !element.locked && (
         <div
           data-rotate-handle="true"
           className="absolute -top-8 left-1/2 -translate-x-1/2 w-6 h-6 md:w-5 md:h-5 bg-primary border-2 border-white rounded-full z-10 touch-none cursor-grab active:cursor-grabbing flex items-center justify-center"
@@ -636,7 +657,7 @@ export function CanvasElement({
       )}
 
       {/* Rotation line */}
-      {isSelected && (
+      {isSelected && !element.locked && (
         <div
           className="absolute left-1/2 -translate-x-1/2 w-px h-6 bg-primary z-10 pointer-events-none"
           style={{ top: "-24px" }}

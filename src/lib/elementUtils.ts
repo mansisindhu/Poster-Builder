@@ -59,7 +59,9 @@ export function getElementBounds(element: CanvasElement): { x: number; y: number
   
   if (element.type === "text") {
     width = element.width;
-    height = element.fontSize * 1.5; // Approximate
+    // Calculate height based on content and line wrapping
+    const lines = element.content.split("\n");
+    height = lines.length * element.fontSize * 1.2 + 16; // line height + padding
   } else if (element.type === "image" || element.type === "shape") {
     width = element.size.width;
     height = element.size.height;

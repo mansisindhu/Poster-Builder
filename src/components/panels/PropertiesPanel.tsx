@@ -12,6 +12,12 @@ import {
   ColorPicker,
   PositionEditor,
   RotationEditor,
+  OpacityEditor,
+  LockButton,
+  FlipControls,
+  CanvasSettingsEditor,
+  TextShadowEditor,
+  ImageFiltersEditor,
   SizeEditor,
   TextStyleEditor,
   ShapeStyleEditor,
@@ -43,7 +49,7 @@ export function PropertiesPanel({
   // Show multi-selection panel if multiple items selected
   if (selectedCount > 1) {
     return (
-      <aside className="w-60 bg-background border-r flex flex-col">
+      <aside className="bg-background border-r flex flex-col h-full">
         <div className="px-4 py-3 border-b">
           <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
             Multi-Selection
@@ -72,41 +78,17 @@ export function PropertiesPanel({
 
   if (!element) {
     return (
-      <aside className="w-60 bg-background border-r flex flex-col">
+      <aside className="bg-background flex flex-col h-full">
         <div className="px-4 py-3 border-b">
           <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
             Canvas Settings
           </h2>
         </div>
         <div className="flex-1 p-4 space-y-4">
-          <div className="space-y-2">
-            <Label
-              htmlFor="bgColor"
-              className="text-xs text-muted-foreground uppercase"
-            >
-              Background Color
-            </Label>
-            <div className="flex gap-2">
-              <Input
-                id="bgColor"
-                type="color"
-                value={canvasSettings.backgroundColor}
-                onChange={(e) =>
-                  onUpdateCanvasSettings({ backgroundColor: e.target.value })
-                }
-                className="h-10 w-14 p-1 cursor-pointer"
-              />
-              <Input
-                type="text"
-                value={canvasSettings.backgroundColor}
-                onChange={(e) =>
-                  onUpdateCanvasSettings({ backgroundColor: e.target.value })
-                }
-                className="h-10 flex-1 font-mono text-sm"
-                placeholder="#ffffff"
-              />
-            </div>
-          </div>
+          <CanvasSettingsEditor
+            canvasSettings={canvasSettings}
+            onUpdateCanvasSettings={onUpdateCanvasSettings}
+          />
           <p className="text-xs text-muted-foreground text-center pt-4">
             Select an element to edit its properties
           </p>
@@ -116,7 +98,7 @@ export function PropertiesPanel({
   }
 
   return (
-    <aside className="w-60 bg-background border-r flex flex-col">
+    <aside className="bg-background border-r flex flex-col h-full">
       <div className="px-4 py-3 border-b">
         <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
           Properties
@@ -130,27 +112,69 @@ export function PropertiesPanel({
           </div>
         )}
 
-        {/* Position */}
-        <PositionEditor
-          x={element.position.x}
-          y={element.position.y}
-          onPositionChange={handlers.handlePositionChange}
+        {/* Opacity */}
+        <OpacityEditor
+          opacity={element.opacity}
+          onOpacityChange={handlers.handleOpacityChange}
         />
 
-        {/* Rotation */}
-        <RotationEditor
-          rotation={element.rotation}
-          onRotationChange={handlers.handleRotationChange}
-          onResetRotation={handlers.handleResetRotation}
-          showHint
-        />
+        {/* Lock/Unlock */}
+        <div className="space-y-2">
+          <LockButton
+            locked={element.locked}
+            onToggleLock={handlers.toggleLock}
+          />
+        </div>
+
+        {/* Flip (for images and shapes) */}
+        {(element.type === "image" || element.type === "shape") && (
+          <FlipControls
+            scaleX={element.scaleX}
+            scaleY={element.scaleY}
+            onFlipHorizontal={handlers.flipHorizontal}
+            onFlipVertical={handlers.flipVertical}
+          />
+        )}
+
+        {/* Image Filters (for images only) */}
+        {element.type === "image" && (
+          <ImageFiltersEditor
+            grayscale={element.grayscale}
+            brightness={element.brightness}
+            contrast={element.contrast}
+            blur={element.blur}
+            onGrayscaleChange={handlers.handleImageGrayscaleChange}
+            onBrightnessChange={handlers.handleImageBrightnessChange}
+            onContrastChange={handlers.handleImageContrastChange}
+            onBlurChange={handlers.handleImageBlurChange}
+          />
+        )}
 
         {/* Size (for images, shapes, and groups) */}
-        {(element.type === "image" || element.type === "shape" || element.type === "group") && (
+        {!element.locked && (element.type === "image" || element.type === "shape" || element.type === "group") && (
           <SizeEditor
             width={element.size.width}
             height={element.size.height}
             onSizeChange={handlers.handleSizeChange}
+          />
+        )}
+
+        {/* Position */}
+        {!element.locked && (
+          <PositionEditor
+            x={element.position.x}
+            y={element.position.y}
+            onPositionChange={handlers.handlePositionChange}
+          />
+        )}
+
+        {/* Rotation */}
+        {!element.locked && (
+          <RotationEditor
+            rotation={element.rotation}
+            onRotationChange={handlers.handleRotationChange}
+            onResetRotation={handlers.handleResetRotation}
+            showHint
           />
         )}
 
@@ -245,6 +269,18 @@ export function PropertiesPanel({
               label="Color"
               value={element.color}
               onChange={handlers.handleTextColorChange}
+            />
+
+            <TextShadowEditor
+              shadowEnabled={element.shadowEnabled}
+              shadowColor={element.shadowColor}
+              shadowBlur={element.shadowBlur}
+              shadowOffsetX={element.shadowOffsetX}
+              shadowOffsetY={element.shadowOffsetY}
+              onToggleShadow={handlers.toggleTextShadow}
+              onShadowColorChange={handlers.handleTextShadowColorChange}
+              onShadowBlurChange={handlers.handleTextShadowBlurChange}
+              onShadowOffsetChange={handlers.handleTextShadowOffsetChange}
             />
           </>
         )}

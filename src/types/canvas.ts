@@ -14,6 +14,10 @@ export interface BaseElement {
   position: Position;
   zIndex: number;
   rotation: number;
+  opacity: number;
+  locked: boolean;
+  scaleX: number;
+  scaleY: number;
 }
 
 export interface TextElement extends BaseElement {
@@ -26,6 +30,11 @@ export interface TextElement extends BaseElement {
   textAlign: "left" | "center" | "right";
   color: string;
   width: number; // Width for text wrapping
+  shadowEnabled: boolean;
+  shadowColor: string;
+  shadowBlur: number;
+  shadowOffsetX: number;
+  shadowOffsetY: number;
 }
 
 export interface ImageElement extends BaseElement {
@@ -33,6 +42,10 @@ export interface ImageElement extends BaseElement {
   src: string;
   name: string;
   size: Size;
+  grayscale: number; // 0-100%
+  brightness: number; // 50-150%
+  contrast: number; // 50-150%
+  blur: number; // 0-10px
 }
 
 // Shape types supported
@@ -89,9 +102,27 @@ export interface CanvasSize {
   category: string;
 }
 
+export type BackgroundType = "solid" | "gradient";
+
+export type GradientDirection = "horizontal" | "vertical" | "diagonal";
+
+export interface GradientBackground {
+  startColor: string;
+  endColor: string;
+  direction: GradientDirection;
+}
+
+export interface GridSettings {
+  enabled: boolean;
+  size: number; // Grid size in pixels (10, 20, 50, etc.)
+}
+
 export interface CanvasSettings {
+  backgroundType: BackgroundType;
   backgroundColor: string;
+  backgroundGradient?: GradientBackground;
   canvasSize: CanvasSize;
+  grid: GridSettings;
 }
 
 export interface CanvasState {

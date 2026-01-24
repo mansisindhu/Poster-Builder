@@ -3,7 +3,7 @@
 import React from "react";
 import { CanvasElement } from "@/types/canvas";
 import { cn } from "@/lib/utils";
-import { Type, ChevronUp, ChevronDown, ChevronsUp, ChevronsDown, RotateCw, Group } from "lucide-react";
+import { Type, ChevronUp, ChevronDown, ChevronsUp, ChevronsDown, RotateCw, Group, Lock, Unlock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { getShapeIcon, getElementDisplayName } from "@/lib/elementUtils";
 
@@ -15,16 +15,18 @@ interface LayersPanelProps {
   onSendToBack: (id: string) => void;
   onMoveUp: (id: string) => void;
   onMoveDown: (id: string) => void;
+  onToggleLock: (id: string) => void;
 }
 
-export function LayersPanel({ 
-  elements, 
-  selectedId, 
+export function LayersPanel({
+  elements,
+  selectedId,
   onSelect,
   onBringToFront,
   onSendToBack,
   onMoveUp,
   onMoveDown,
+  onToggleLock,
 }: LayersPanelProps) {
   // Get IDs of elements that are children of groups (they shouldn't appear as separate layers)
   const groupChildIds = new Set<string>();
@@ -134,6 +136,20 @@ export function LayersPanel({
                         {Math.round(element.rotation)}°
                       </span>
                     )}
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onToggleLock(element.id);
+                      }}
+                      className="flex items-center gap-0.5 text-muted-foreground hover:text-foreground transition-colors"
+                      title={element.locked ? "Unlock element" : "Lock element"}
+                    >
+                      {element.locked ? (
+                        <Lock className="w-3 h-3" />
+                      ) : (
+                        <Unlock className="w-3 h-3" />
+                      )}
+                    </button>
                   </div>
                 </div>
               </div>

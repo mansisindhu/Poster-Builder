@@ -35,8 +35,11 @@ export function drawShape(
   ctx: CanvasRenderingContext2D,
   element: ShapeElement
 ): void {
-  const { size, shapeType, fillColor, strokeColor, strokeWidth, borderRadius, points, position } = element;
+  const { size, shapeType, fillColor, strokeColor, strokeWidth, borderRadius, points, position, opacity } = element;
   const { width: shapeWidth, height: shapeHeight } = size;
+
+  ctx.save();
+  ctx.globalAlpha = opacity;
 
   ctx.fillStyle = fillColor;
   ctx.strokeStyle = strokeColor;
@@ -173,6 +176,8 @@ export function drawShape(
       }
       break;
   }
+
+  ctx.restore();
 }
 
 /**
@@ -187,13 +192,16 @@ export function drawTextElement(
   const posX = offsetX + element.position.x;
   const posY = offsetY + element.position.y;
 
+  ctx.save();
+  ctx.globalAlpha = element.opacity;
+
   // Build font string with style (italic) and weight
   const fontStyle = element.fontStyle || "normal";
   ctx.font = `${fontStyle} ${element.fontWeight} ${element.fontSize}px ${element.fontFamily}`;
-  
+
   // Use element width for wrapping (minus padding)
   const textWidth = element.width - 24; // Account for px-3 padding (12px each side)
-  
+
   // Split by newlines first, then wrap each line
   const paragraphs = element.content.split("\n");
   const allLines: string[] = [];
@@ -205,17 +213,30 @@ export function drawTextElement(
       allLines.push(...wrapped);
     }
   });
-  
+
   const lineHeight = element.fontSize * 1.2;
   const textHeight = allLines.length * lineHeight;
 
   const centerX = posX + element.width / 2;
   const centerY = posY + 8 + textHeight / 2;
 
-  ctx.save();
   ctx.translate(centerX, centerY);
   ctx.rotate((element.rotation * Math.PI) / 180);
+  ctx.scale(element.scaleX, element.scaleY);
   ctx.translate(-centerX, -centerY);
+
+  // Apply text shadow
+  if (element.shadowEnabled) {
+    ctx.shadowColor = element.shadowColor;
+    ctx.shadowBlur = element.shadowBlur;
+    ctx.shadowOffsetX = element.shadowOffsetX;
+    ctx.shadowOffsetY = element.shadowOffsetY;
+  } else {
+    ctx.shadowColor = "transparent";
+    ctx.shadowBlur = 0;
+    ctx.shadowOffsetX = 0;
+    ctx.shadowOffsetY = 0;
+  }
 
   ctx.fillStyle = element.color;
   ctx.textBaseline = "top";
@@ -256,9 +277,14 @@ export function drawImageElement(
   const centerY = posY + element.size.height / 2;
 
   ctx.save();
+  ctx.globalAlpha = element.opacity;
   ctx.translate(centerX, centerY);
   ctx.rotate((element.rotation * Math.PI) / 180);
+  ctx.scale(element.scaleX, element.scaleY);
   ctx.translate(-centerX, -centerY);
+
+  // Apply image filters
+  ctx.filter = `grayscale(${element.grayscale}%) brightness(${element.brightness}%) contrast(${element.contrast}%) blur(${element.blur}px)`;
 
   ctx.drawImage(
     img,
@@ -287,6 +313,7 @@ export function drawGroupElement(
 
   ctx.translate(groupCenterX, groupCenterY);
   ctx.rotate((element.rotation * Math.PI) / 180);
+  ctx.scale(element.scaleX, element.scaleY);
   ctx.translate(-groupCenterX, -groupCenterY);
 
   // Draw each child element within the group
@@ -310,6 +337,7 @@ export function drawGroupElement(
       const centerY = childAbsY + childElement.size.height / 2;
 
       ctx.save();
+      ctx.globalAlpha = childElement.opacity;
       ctx.translate(centerX, centerY);
       ctx.rotate((childElement.rotation * Math.PI) / 180);
       ctx.translate(-centerX, -centerY);
@@ -383,7 +411,25 @@ export async function exportCanvasToImage(
   ctx.imageSmoothingQuality = "high";
 
   // Draw background
-  ctx.fillStyle = canvasSettings.backgroundColor;
+  if (canvasSettings.backgroundType === "gradient" && canvasSettings.backgroundGradient) {
+    let gradient;
+    switch (canvasSettings.backgroundGradient.direction) {
+      case "horizontal":
+        gradient = ctx.createLinearGradient(0, 0, width, 0);
+        break;
+      case "vertical":
+        gradient = ctx.createLinearGradient(0, 0, 0, height);
+        break;
+      case "diagonal":
+        gradient = ctx.createLinearGradient(0, 0, width, height);
+        break;
+    }
+    gradient!.addColorStop(0, canvasSettings.backgroundGradient.startColor);
+    gradient!.addColorStop(1, canvasSettings.backgroundGradient.endColor);
+    ctx.fillStyle = gradient!;
+  } else {
+    ctx.fillStyle = canvasSettings.backgroundColor;
+  }
   ctx.fillRect(0, 0, width, height);
 
   // Get IDs of elements that are children of groups
@@ -418,6 +464,7 @@ export async function exportCanvasToImage(
       ctx.save();
       ctx.translate(centerX, centerY);
       ctx.rotate((element.rotation * Math.PI) / 180);
+      ctx.scale(element.scaleX, element.scaleY);
       ctx.translate(-centerX, -centerY);
       drawShape(ctx, element);
       ctx.restore();

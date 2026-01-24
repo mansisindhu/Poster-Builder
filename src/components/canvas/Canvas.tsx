@@ -2,7 +2,9 @@
 
 import React, { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import { CanvasElement } from "./CanvasElement";
-import { CanvasElement as CanvasElementType, Position, CanvasSize } from "@/types/canvas";
+import { ZoomControls } from "./ZoomControls";
+import { GridOverlay } from "./GridOverlay";
+import { CanvasElement as CanvasElementType, Position, CanvasSize, CanvasSettings } from "@/types/canvas";
 import { cn } from "@/lib/utils";
 import { SNAP_THRESHOLD } from "@/lib/constants";
 
@@ -10,8 +12,7 @@ interface CanvasProps {
   elements: CanvasElementType[];
   selectedId: string | null;
   selectedIds: string[];
-  backgroundColor: string;
-  canvasSize: CanvasSize;
+  canvasSettings: CanvasSettings;
   onSelect: (id: string | null) => void;
   onToggleSelect: (id: string) => void;
   onPositionChange: (id: string, position: Position) => void;
@@ -46,8 +47,7 @@ export function Canvas({
   elements,
   selectedId,
   selectedIds,
-  backgroundColor,
-  canvasSize,
+  canvasSettings,
   onSelect,
   onToggleSelect,
   onPositionChange,
@@ -62,6 +62,7 @@ export function Canvas({
 }: CanvasProps) {
   const [isDragOver, setIsDragOver] = useState(false);
   const [scale, setScale] = useState(1);
+  const [manualZoom, setManualZoom] = useState<number | null>(null); // null = auto-fit, number = manual zoom percentage
   const [alignmentGuides, setAlignmentGuides] = useState<AlignmentGuides>({
     showVerticalCenter: false,
     showHorizontalCenter: false,
@@ -72,41 +73,92 @@ export function Canvas({
 
   // Calculate canvas center
   const canvasCenter = useMemo(() => ({
-    x: canvasSize.width / 2,
-    y: canvasSize.height / 2,
-  }), [canvasSize.width, canvasSize.height]);
+    x: canvasSettings.canvasSize.width / 2,
+    y: canvasSettings.canvasSize.height / 2,
+  }), [canvasSettings.canvasSize.width, canvasSettings.canvasSize.height]);
 
-  // Calculate scale to fit canvas in viewport
+  // Calculate scale to fit canvas in viewport (only when in auto-fit mode)
   useEffect(() => {
+    if (manualZoom !== null) return; // Skip if manual zoom is active
+
     const updateScale = () => {
       if (!containerRef.current) return;
-      
+
       const padding = isMobile ? 32 : 64;
       const containerRect = containerRef.current.getBoundingClientRect();
       const availableWidth = containerRect.width - padding;
       const availableHeight = containerRect.height - padding - 40; // Account for size label
-      
-      const scaleX = availableWidth / canvasSize.width;
-      const scaleY = availableHeight / canvasSize.height;
+
+      const scaleX = availableWidth / canvasSettings.canvasSize.width;
+      const scaleY = availableHeight / canvasSettings.canvasSize.height;
       const newScale = Math.min(scaleX, scaleY, 1); // Don't scale up, only down
-      
-      setScale(Math.max(0.1, newScale));
+
+      setScale(Math.max(0.25, newScale)); // Allow down to 25%
     };
 
     updateScale();
     window.addEventListener("resize", updateScale);
-    
+
     // Also update when canvas size changes
     const resizeObserver = new ResizeObserver(updateScale);
     if (containerRef.current) {
       resizeObserver.observe(containerRef.current);
     }
-    
+
     return () => {
       window.removeEventListener("resize", updateScale);
       resizeObserver.disconnect();
     };
-  }, [canvasSize.width, canvasSize.height, isMobile]);
+  }, [canvasSettings.canvasSize.width, canvasSettings.canvasSize.height, isMobile, manualZoom]);
+
+  // Update scale when manual zoom changes
+  useEffect(() => {
+    if (manualZoom !== null) {
+      setScale(Math.max(0.25, Math.min(2.0, manualZoom / 100)));
+    }
+  }, [manualZoom]);
+
+  // Zoom control functions
+  const zoomIn = useCallback(() => {
+    setManualZoom(prev => {
+      const current = prev ?? (scale * 100);
+      return Math.min(200, current + 25);
+    });
+  }, [scale]);
+
+  const zoomOut = useCallback(() => {
+    setManualZoom(prev => {
+      const current = prev ?? (scale * 100);
+      return Math.max(25, current - 25);
+    });
+  }, [scale]);
+
+  const resetZoom = useCallback(() => {
+    setManualZoom(null); // Reset to auto-fit
+  }, []);
+
+  const currentZoomPercent = manualZoom ?? Math.round(scale * 100);
+
+  // Keyboard shortcuts for zoom
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.ctrlKey || e.metaKey) {
+        if (e.key === '=' || e.key === '+') {
+          e.preventDefault();
+          zoomIn();
+        } else if (e.key === '-') {
+          e.preventDefault();
+          zoomOut();
+        } else if (e.key === '0') {
+          e.preventDefault();
+          resetZoom();
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [zoomIn, zoomOut, resetZoom]);
 
   // Handle position change with alignment guides
   const handlePositionChangeWithGuides = useCallback((id: string, position: Position) => {
@@ -151,6 +203,24 @@ export function Canvas({
     }
     if (isNearHorizontalCenter) {
       snappedPosition.y = canvasCenter.y - elementHeight / 2;
+    }
+
+    // Snap to grid if enabled
+    if (canvasSettings.grid.enabled) {
+      const gridSize = canvasSettings.grid.size;
+      const snapThreshold = gridSize * 0.3; // Snap when within 30% of grid size
+
+      // Check X snapping
+      const nearestGridX = Math.round(snappedPosition.x / gridSize) * gridSize;
+      if (Math.abs(snappedPosition.x - nearestGridX) < snapThreshold) {
+        snappedPosition.x = nearestGridX;
+      }
+
+      // Check Y snapping
+      const nearestGridY = Math.round(snappedPosition.y / gridSize) * gridSize;
+      if (Math.abs(snappedPosition.y - nearestGridY) < snapThreshold) {
+        snappedPosition.y = nearestGridY;
+      }
     }
 
     onPositionChange(id, snappedPosition);
@@ -221,16 +291,26 @@ export function Canvas({
                 "relative transition-colors",
                 isDragOver && "ring-4 ring-primary ring-offset-2"
               )}
-              style={{ 
-                backgroundColor,
-                width: canvasSize.width,
-                height: canvasSize.height,
+              style={{
+                background: canvasSettings.backgroundType === "gradient" && canvasSettings.backgroundGradient
+                  ? `linear-gradient(${
+                      canvasSettings.backgroundGradient.direction === "horizontal" ? "90deg" :
+                      canvasSettings.backgroundGradient.direction === "vertical" ? "180deg" : "135deg"
+                    }, ${canvasSettings.backgroundGradient.startColor}, ${canvasSettings.backgroundGradient.endColor})`
+                  : canvasSettings.backgroundColor,
+                width: canvasSettings.canvasSize.width,
+                height: canvasSettings.canvasSize.height,
               }}
               onClick={handleCanvasClick}
               onDragOver={handleDragOver}
               onDragLeave={handleDragLeave}
               onDrop={handleDrop}
             >
+              <GridOverlay
+                grid={canvasSettings.grid}
+                canvasSize={canvasSettings.canvasSize}
+                scale={scale}
+              />
               {/* Alignment Guides */}
               {alignmentGuides.showVerticalCenter && (
                 <div 
@@ -301,11 +381,17 @@ export function Canvas({
               ))}
             </div>
           </div>
-          <div className={cn(
-            "text-xs text-muted-foreground mt-3 text-center",
-          )}>
-            <div>{canvasSize.name}</div>
-            <div>{canvasSize.width} × {canvasSize.height} px {scale < 1 && `(${Math.round(scale * 100)}%)`}</div>
+          <div className="flex items-center justify-between mt-3">
+            <div className="text-xs text-muted-foreground">
+              <div>{canvasSettings.canvasSize.name}</div>
+              <div>{canvasSettings.canvasSize.width} × {canvasSettings.canvasSize.height} px</div>
+            </div>
+            <ZoomControls
+              zoomPercent={currentZoomPercent}
+              onZoomIn={zoomIn}
+              onZoomOut={zoomOut}
+              onResetZoom={resetZoom}
+            />
           </div>
         </div>
       </AlignmentGuidesContext.Provider>

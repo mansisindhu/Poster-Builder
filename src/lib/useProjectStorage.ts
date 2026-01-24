@@ -95,8 +95,14 @@ export function useProjectStorage({
         const loadedStateData: CanvasState = {
           elements: project.state.elements || [],
           canvasSettings: {
+            backgroundType: project.state.canvasSettings?.backgroundType || "solid",
             backgroundColor: project.state.canvasSettings?.backgroundColor || "#ffffff",
+            backgroundGradient: project.state.canvasSettings?.backgroundGradient,
             canvasSize: project.state.canvasSettings?.canvasSize || DEFAULT_CANVAS_SIZE,
+            grid: project.state.canvasSettings?.grid || {
+              enabled: false,
+              size: 20,
+            },
           },
         };
         
